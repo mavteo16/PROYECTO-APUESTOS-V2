@@ -1,0 +1,402 @@
+# ==============================================================================
+# ÍTEM 7.1: CURVA DE CALIBRACIÓN (DIAGRAMA DE FIABILIDAD)
+# ==============================================================================
+
+library(tidyverse)
+library(ggplot2)
+library(scales)
+
+# 1. Preparación de probabilidades ajustadas (método multiplicativo sobre Promedio de Cierre)
+df_item_7_1 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+    
+    # Normalización multiplicativa
+    prob_mult_H = prob_bruta_H / overround,
+    prob_mult_D = prob_bruta_D / overround,
+    prob_mult_A = prob_bruta_A / overround
+  )
+
+# 2. Transformar a formato largo para evaluar el evento binario (Ocurrió = 1, No Ocurrió = 0)
+datos_curva <- df_item_7_1 %>%
+  select(Resultado_Final, prob_mult_H, prob_mult_D, prob_mult_A) %>%
+  pivot_longer(
+    cols = starts_with("prob_mult_"),
+    names_to = "tipo_resultado",
+    values_to = "prob_pronosticada"
+  ) %>%
+  mutate(
+    ocurrio = case_when(
+      tipo_resultado == "prob_mult_H" & Resultado_Final == "H" ~ 1,
+      tipo_resultado == "prob_mult_D" & Resultado_Final == "D" ~ 1,
+      tipo_resultado == "prob_mult_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+# 3. Construcción de la Tabla de Bins (Intervalos de probabilidad de 10% en 10%)
+tabla_bins <- datos_curva %>%
+  mutate(
+    bin = cut(prob_pronosticada, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+  ) %>%
+  group_by(bin) %>%
+  summarise(
+    n_eventos = n(),
+    prob_media_pronosticada = mean(prob_pronosticada),
+    frecuencia_real_observada = mean(ocurrio),
+    .groups = "drop"
+  )
+
+# Mostrar tabla en la consola
+print(tabla_bins)
+
+# 4. Generación del Diagrama de Fiabilidad (Curva de Calibración)
+ggplot(tabla_bins, aes(x = prob_media_pronosticada, y = frecuencia_real_observada)) +
+  geom_point(aes(size = n_eventos), color = "#2b5c8f", alpha = 0.8) +
+  geom_line(color = "#2b5c8f", linewidth = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 0.8) +
+  scale_x_continuous(limits = c(0, 1), labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(limits = c(0, 1), labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Diagrama de Fiabilidad (Curva de Calibración)",
+    subtitle = "Comparación entre Probabilidad Implícita Ajustada y Frecuencia Real Observada",
+    x = "Probabilidad Pronosticada (Ajustada)",
+    y = "Frecuencia Real Observada",
+    size = "N° de Eventos",
+    caption = "Línea roja punteada: Calibración perfecta (y = x)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank()
+  )
+
+
+
+
+# ==============================================================================
+# ÍTEM 7.2: REGLAS DE PUNTUACIÓN (SCORE RULES)
+# ==============================================================================
+
+library(tidyverse)
+
+# ------------------------------------------------------------------------------
+# 1. Preparación de datos y líneas base
+# ------------------------------------------------------------------------------
+df_item_7_2 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    # Probabilidades ajustadas de la casa de apuestas (Multiplicativo)
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+    p_H = prob_bruta_H / overround,
+    p_D = prob_bruta_D / overround,
+    p_A = prob_bruta_A / overround
+  )
+
+N <- nrow(df_item_7_2)
+
+# Frecuencias históricas globales de la base de datos (Línea Base 2)
+p_hist_H <- mean(df_item_7_2$Resultado_Final == "H")
+p_hist_D <- mean(df_item_7_2$Resultado_Final == "D")
+p_hist_A <- mean(df_item_7_2$Resultado_Final == "A")
+
+# Vectors binarios de resultados reales (1 si ocurrió, 0 si no)
+y_H <- as.numeric(df_item_7_2$Resultado_Final == "H")
+y_D <- as.numeric(df_item_7_2$Resultado_Final == "D")
+y_A <- as.numeric(df_item_7_2$Resultado_Final == "A")
+
+# ------------------------------------------------------------------------------
+# 2. Cálculo del Brier Score y Líneas Base
+# ------------------------------------------------------------------------------
+# A. Brier Score de la Casa de Apuestas
+brier_modelo <- mean((df_item_7_2$p_H - y_H)^2 + (df_item_7_2$p_D - y_D)^2 + (df_item_7_2$p_A - y_A)^2) / 3
+
+# B. Línea Base Uniforme (1/3 para cada resultado)
+brier_uniforme <- mean(((1/3) - y_H)^2 + ((1/3) - y_D)^2 + ((1/3) - y_A)^2) / 3
+
+# C. Línea Base Frecuencia Histórica
+brier_historico <- mean((p_hist_H - y_H)^2 + (p_hist_D - y_D)^2 + (p_hist_A - y_A)^2) / 3
+
+# Skill Score del Brier (Mejora % respecto a la frecuencia histórica)
+brier_skill_score <- 1 - (brier_modelo / brier_historico)
+
+# ------------------------------------------------------------------------------
+# 3. Descomposición de Murphy del Brier Score (BONIFICABLE)
+# ------------------------------------------------------------------------------
+# Incertidumbre Intrínseca (UNC)
+unc <- (p_hist_H * (1 - p_hist_H) + p_hist_D * (1 - p_hist_D) + p_hist_A * (1 - p_hist_A)) / 3
+
+# Agrupamiento por Bins para calcular Fiabilidad (CAL) y Resolución (RES)
+datos_murphy <- df_item_7_2 %>%
+  select(Resultado_Final, p_H, p_D, p_A) %>%
+  pivot_longer(cols = c(p_H, p_D, p_A), names_to = "tipo", values_to = "p") %>%
+  mutate(
+    y = case_when(
+      tipo == "p_H" & Resultado_Final == "H" ~ 1,
+      tipo == "p_D" & Resultado_Final == "D" ~ 1,
+      tipo == "p_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    ),
+    bin = cut(p, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+  )
+
+tabla_murphy <- datos_murphy %>%
+  group_by(bin) %>%
+  summarise(
+    n_k = n(),
+    p_k = mean(p),
+    y_k = mean(y),
+    .groups = "drop"
+  ) %>%
+  filter(n_k > 0)
+
+# Total de componentes evaluadas (3 * N partidos)
+N_total <- sum(tabla_murphy$n_k)
+
+# Fiabilidad (CAL): Qué tan cerca está la predicción del resultado real observado en cada bin
+cal <- sum(tabla_murphy$n_k * (tabla_murphy$p_k - tabla_murphy$y_k)^2) / N_total
+
+# Frecuencia global promedio
+y_bar <- mean(datos_murphy$y)
+
+# Resolución (RES): Cuánto se alejan los bins de la media global
+res <- sum(tabla_murphy$n_k * (tabla_murphy$y_k - y_bar)^2) / N_total
+
+# ------------------------------------------------------------------------------
+# 4. Ranked Probability Score - RPS (BONIFICABLE)
+# ------------------------------------------------------------------------------
+# El RPS evalúa la diferencia acumulada considerando el orden ordinal (Local -> Empate -> Visitante)
+
+calcular_rps_partido <- function(p_h, p_d, p_a, res_real) {
+  # Probabilidades acumuladas pronosticadas
+  P1 <- p_h
+  P2 <- p_h + p_d
+  
+  # Probabilidades acumuladas reales
+  O1 <- ifelse(res_real == "H", 1, 0)
+  O2 <- ifelse(res_real == "H" | res_real == "D", 1, 0)
+  
+  # Error cuadrático acumulado ordenado
+  rps <- 0.5 * ((P1 - O1)^2 + (P2 - O2)^2)
+  return(rps)
+}
+
+rps_valores <- mapply(calcular_rps_partido, df_item_7_2$p_H, df_item_7_2$p_D, df_item_7_2$p_A, df_item_7_2$Resultado_Final)
+rps_promedio <- mean(rps_valores)
+
+# ------------------------------------------------------------------------------
+# 5. Mostrar Resultados Consolidados
+# ------------------------------------------------------------------------------
+cat("\n=======================================================\n")
+cat("          RESUMEN DE REGLAS DE PUNTUACIÓN (7.2)         \n")
+cat("=======================================================\n")
+cat("Brier Score Casa de Apuestas: ", round(brier_modelo, 4), "\n")
+cat("Línea Base Uniforme (1/3):    ", round(brier_uniforme, 4), "\n")
+cat("Línea Base Frec. Histórica:  ", round(brier_historico, 4), "\n")
+cat("Brier Skill Score (BSS):     ", round(brier_skill_score * 100, 2), "%\n")
+cat("-------------------------------------------------------\n")
+cat("DESCOMPOSICIÓN DE MURPHY (BONIFICABLE):\n")
+cat("  - Fiabilidad (CAL):         ", round(cal, 6), " (Cercano a 0 = Excelente)\n")
+cat("  - Resolución (RES):         ", round(res, 6), " (Mayor = Mejor habilidad de separación)\n")
+cat("  - Incertidumbre (UNC):      ", round(unc, 6), " (Varianza del evento)\n")
+cat("  - Comprobación (CAL-RES+UNC):", round((cal - res + unc)/3, 4), "\n")
+cat("-------------------------------------------------------\n")
+cat("RANKED PROBABILITY SCORE - RPS (BONIFICABLE):\n")
+cat("  - RPS Promedio Modelo:      ", round(rps_promedio, 4), "\n")
+cat("=======================================================\n")
+
+
+
+# ==============================================================================
+# ÍTEM 7.3: PRUEBAS DE BONDAD DE AJUSTE Y ANÁLISIS DE SENSIBILIDAD
+# ==============================================================================
+
+library(tidyverse)
+install.packages("ResourceSelection")
+library(ResourceSelection) # Para la prueba de Hosmer-Lemeshow
+
+# ------------------------------------------------------------------------------
+# 1. Preparación de datos binarios
+# ------------------------------------------------------------------------------
+df_item_7_3 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+    p_H = prob_bruta_H / overround,
+    p_D = prob_bruta_D / overround,
+    p_A = prob_bruta_A / overround
+  )
+
+datos_hl <- df_item_7_3 %>%
+  select(Resultado_Final, p_H, p_D, p_A) %>%
+  pivot_longer(cols = c(p_H, p_D, p_A), names_to = "tipo", values_to = "prob") %>%
+  mutate(
+    ocurrio = case_when(
+      tipo == "p_H" & Resultado_Final == "H" ~ 1,
+      tipo == "p_D" & Resultado_Final == "D" ~ 1,
+      tipo == "p_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+# ------------------------------------------------------------------------------
+# 2. Prueba de Hosmer-Lemeshow Formal (g = 10 grupos)
+# ------------------------------------------------------------------------------
+hl_test_10 <- hoslem.test(datos_hl$ocurrio, datos_hl$prob, g = 10)
+
+# ------------------------------------------------------------------------------
+# 3. Magnitud del efecto (Diferencias en puntos porcentuales por bin)
+# ------------------------------------------------------------------------------
+tabla_desviaciones <- datos_hl %>%
+  mutate(bin = cut(prob, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)) %>%
+  group_by(bin) %>%
+  summarise(
+    n_casos = n(),
+    prob_media = mean(prob),
+    frec_observada = mean(ocurrio),
+    desviacion_pp = (frec_observada - prob_media) * 100, # En puntos porcentuales
+    desviacion_abs_pp = abs(desviacion_pp),
+    .groups = "drop"
+  )
+
+desviacion_media_pp <- sum(tabla_desviaciones$n_casos * tabla_desviaciones$desviacion_abs_pp) / sum(tabla_desviaciones$n_casos)
+
+# ------------------------------------------------------------------------------
+# 4. Análisis de Sensibilidad al Agrupamiento (g = 5, g = 10, g = 15)
+# ------------------------------------------------------------------------------
+hl_test_5  <- hoslem.test(datos_hl$ocurrio, datos_hl$prob, g = 5)
+hl_test_15 <- hoslem.test(datos_hl$ocurrio, datos_hl$prob, g = 15)
+
+# ------------------------------------------------------------------------------
+# 5. Impresión de Resultados Consolidados
+# ------------------------------------------------------------------------------
+cat("\n=======================================================\n")
+cat("       RESULTADOS PRUEBA DE BONDAD DE AJUSTE (7.3)      \n")
+cat("=======================================================\n")
+cat("1. PRUEBA DE HOSMER-LEMESHOW PRINCIPAL (g = 10 Bins):\n")
+cat("   - Estadística Chi-cuadrado (X2):", round(hl_test_10$statistic, 4), "\n")
+cat("   - Grados de libertad (df):      ", hl_test_10$parameter, "\n")
+cat("   - valor p (p-value):            ", round(hl_test_10$p.value, 5), "\n\n")
+
+cat("2. MAGNITUD PRÁCTICA DE LA DESVIACIÓN:\n")
+cat("   - Desviación Media Ponderada:   ", round(desviacion_media_pp, 2), "puntos porcentuales (%p)\n\n")
+
+cat("3. ANÁLISIS DE SENSIBILIDAD AL ESQUEMA DE AGRUPAMIENTO:\n")
+cat("   - g = 5  bins -> X2 =", round(hl_test_5$statistic, 2),  "| p-value =", round(hl_test_5$p.value, 5), "\n")
+cat("   - g = 10 bins -> X2 =", round(hl_test_10$statistic, 2), "| p-value =", round(hl_test_10$p.value, 5), "\n")
+cat("   - g = 15 bins -> X2 =", round(hl_test_15$statistic, 2), "| p-value =", round(hl_test_15$p.value, 5), "\n")
+cat("=======================================================\n")
+
+# Mostrar tabla con las desviaciones en puntos porcentuales
+print(tabla_desviaciones)
+
+
+
+# ==============================================================================
+# ÍTEM 7.4: ANÁLISIS FORMAL DEL SESGO FAVORITO-LONGSHOT
+# ==============================================================================
+
+library(tidyverse)
+library(ggplot2)
+
+# 1. Preparación de datos y cálculo del error por evento/bin
+df_item_7_4 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+    p_H = prob_bruta_H / overround,
+    p_D = prob_bruta_D / overround,
+    p_A = prob_bruta_A / overround
+  )
+
+datos_sesgo <- df_item_7_4 %>%
+  select(Resultado_Final, p_H, p_D, p_A) %>%
+  pivot_longer(cols = c(p_H, p_D, p_A), names_to = "tipo", values_to = "prob") %>%
+  mutate(
+    ocurrio = case_when(
+      tipo == "p_H" & Resultado_Final == "H" ~ 1,
+      tipo == "p_D" & Resultado_Final == "D" ~ 1,
+      tipo == "p_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+# Agrupamiento por bins de 10%
+tabla_sesgo_bins <- datos_sesgo %>%
+  mutate(bin = cut(prob, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)) %>%
+  group_by(bin) %>%
+  summarise(
+    n_casos = n(),
+    prob_media = mean(prob),
+    frec_observada = mean(ocurrio),
+    error_calibracion = frec_observada - prob_media, # Positivo = Subestimado, Negativo = Sobreestimado
+    .groups = "drop"
+  )
+
+# 2. Modelo de Regresión Lineal sobre el Error
+# Error = Beta0 + Beta1 * Probabilidad
+modelo_sesgo <- lm(error_calibracion ~ prob_media, data = tabla_sesgo_bins, weights = n_casos)
+resumen_modelo <- summary(modelo_sesgo)
+
+# 3. Comparación de Extremos (Longshots < 20% vs. Favoritos > 50%)
+extremos_comparacion <- datos_sesgo %>%
+  mutate(
+    categoria = case_when(
+      prob < 0.20 ~ "Longshots / Underdogs (<20%)",
+      prob > 0.50 ~ "Favoritos Claros (>50%)",
+      TRUE ~ "Rango Medio (20%-50%)"
+    )
+  ) %>%
+  filter(categoria != "Rango Medio (20%-50%)") %>%
+  group_by(categoria) %>%
+  summarise(
+    n_eventos = n(),
+    prob_media_predicha = mean(prob),
+    frecuencia_real = mean(ocurrio),
+    diferencia_pp = (frecuencia_real - prob_media_predicha) * 100,
+    .groups = "drop"
+  )
+
+# 4. Impresión de Resultados
+cat("\n=======================================================\n")
+cat("      CONTRASTE FORMAL DEL SESGO FAVORITO-LONGSHOT (7.4)\n")
+cat("=======================================================\n")
+cat("1. REGRESIÓN LINEAL DEL ERROR DE CALIBRACIÓN:\n")
+cat("   - Pendiente (Beta1):            ", round(resumen_modelo$coefficients[2, 1], 4), "\n")
+cat("   - Error Estándar Beta1:         ", round(resumen_modelo$coefficients[2, 2], 4), "\n")
+cat("   - valor p del sesgo:            ", round(resumen_modelo$coefficients[2, 4], 5), "\n")
+cat("   - R2 Ajustado:                  ", round(resumen_modelo$r.squared, 4), "\n\n")
+
+cat("2. COMPARACIÓN DIRECTA DE EXTREMOS:\n")
+print(extremos_comparacion)
+cat("=======================================================\n")
+
+# 5. Gráfico del Error de Calibración
+ggplot(tabla_sesgo_bins, aes(x = prob_media, y = error_calibracion)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", linewidth = 0.8) +
+  geom_point(aes(size = n_casos), color = "#1f77b4") +
+  geom_smooth(method = "lm", se = TRUE, color = "#ff7f0e", fill = "grey80") +
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Magnitud del Sesgo Favorito-Longshot",
+    subtitle = "Diferencia (Frecuencia Real - Probabilidad Predicha) por Rango de Probabilidad",
+    x = "Probabilidad Predicha (Ajustada)",
+    y = "Error de Calibración (Puntos Porcentuales)",
+    size = "Cantidad de Casos",
+    caption = "Valores negativos = Sobreestimación (Longshots) | Valores positivos = Subestimación (Favoritos)"
+  ) +
+  theme_minimal()
