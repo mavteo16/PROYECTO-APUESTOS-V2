@@ -1,0 +1,1725 @@
+---
+title: "¿Están bien calibradas las casas de apuestas?"
+subtitle: "Reporte de calibración de cuotas 1X2: evaluación retrospectiva de pronósticos probabilísticos"
+author: "Mateo Valencia, Samuel Lopez, Camilo Henriquez y Valeria De Jesus Gutierrez Nuñez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+params:
+  ruta_csv: "Base_Analitica_Entregable_1.csv"
+  metodo_principal: "Pot"      # "Mult", "Pot" o "Shin"
+  operador_ref: "Pinnacle"     # referencia para las comparaciones pareadas
+  k_bins: 8                    # intervalos de la curva de calibración (igual frecuencia)
+  B_boot: 2000                 # réplicas bootstrap por bloques
+  B_sim: 1000                  # simulaciones bajo calibración perfecta
+  semilla: 2026
+  temporada_var: "2018/19"     # primera temporada con VAR en la liga analizada (LaLiga: 2018/19)
+  k_bins_temp: 5               # intervalos por curva cuando se separa por temporada (≈ 76 partidos c/u)
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", fig.width = 10, fig.height = 5.5, dpi = 120)
+
+paquetes <- c("dplyr", "tidyr", "ggplot2", "knitr")
+faltan <- paquetes[!vapply(paquetes, requireNamespace, logical(1), quietly = TRUE)]
+if (length(faltan) > 0) {
+  stop("Faltan paquetes. Ejecuta primero: install.packages(c(",
+       paste0('"', faltan, '"', collapse = ", "), "))")
+}
+suppressPackageStartupMessages({
+  library(dplyr); library(tidyr); library(ggplot2); library(knitr)
+})
+options(dplyr.summarise.inform = FALSE)
+set.seed(params$semilla)
+
+pal_res <- c(Local = "#2b6a9e", Empate = "#e07a5f", Visitante = "#81b29a")
+pal_met <- c(Multiplicativo = "#2b6a9e", Potencia = "#e07a5f", Shin = "#81b29a")
+theme_set(theme_minimal(base_size = 12) +
+            theme(plot.title = element_text(face = "bold"),
+                  legend.position = "bottom",
+                  panel.grid.minor = element_blank()))
+```
+
+```{css, echo = FALSE}
+.metodo { background: #f2f6fa; border-left: 4px solid #2b6a9e; border-radius: 4px;
+          padding: 10px 16px; margin: 10px 0 18px; font-size: 0.95em; }
+.metodo p { margin: 5px 0; }
+.conclusion { background: #fbf3ee; border-left: 4px solid #d1603d; border-radius: 4px;
+              padding: 10px 16px; margin: 10px 0 18px; }
+.conclusion p { margin: 6px 0; }
+```
+
+```{r lectura, include=FALSE}
+# ---- 1. Localizar y leer la base analítica (ruta relativa; sin rutas personales) ----
+# Al hacer knit, R trabaja en la carpeta del .Rmd. Se busca la base, en este orden:
+#   (a) params$ruta_csv tal cual (puede ser relativa o absoluta);
+#   (b) carpetas habituales del proyecto, junto al .Rmd y una o dos carpetas arriba;
+#   (c) búsqueda recursiva por nombre dentro de la carpeta del proyecto.
+dir_rmd <- tryCatch(normalizePath(dirname(knitr::current_input(dir = TRUE)), winslash = "/"),
+                    error = function(e) getwd())
+nombre_csv <- basename(params$ruta_csv)
+bases_dir  <- unique(c(dir_rmd, dirname(dir_rmd), dirname(dirname(dir_rmd))))
+subcarpetas <- c("", "Resultados", "datos", "data", "Datos", file.path("Resultados", "Tablas_CSV"))
+candidatas <- unique(c(
+  params$ruta_csv,
+  file.path(dir_rmd, params$ruta_csv),
+  unlist(lapply(bases_dir, function(b) file.path(b, subcarpetas, nombre_csv)))
+))
+candidatas <- gsub("/+", "/", gsub("\\\\", "/", candidatas))
+ruta_ok <- candidatas[file.exists(candidatas) & !dir.exists(candidatas)][1]
+
+if (is.na(ruta_ok)) {   # búsqueda recursiva acotada a la carpeta del .Rmd
+  hall <- list.files(dir_rmd, pattern = paste0("^", gsub(".", "\\.", nombre_csv, fixed = TRUE), "$"),
+                     recursive = TRUE, full.names = TRUE)
+  if (length(hall) > 0) ruta_ok <- hall[1]
+}
+if (is.na(ruta_ok)) {
+  stop("No se encontró '", nombre_csv, "'. Carpeta del .Rmd: ", dir_rmd,
+       ". Copia el CSV en esa carpeta (o en su subcarpeta 'Resultados'), ",
+       "o renderiza con: rmarkdown::render('", basename(knitr::current_input()),
+       "', params = list(ruta_csv = 'ruta/completa/al/archivo.csv')).")
+}
+message("Base analítica leída desde: ", ruta_ok)
+datos_raw <- read.csv(ruta_ok, stringsAsFactors = FALSE)
+
+req <- c("Liga", "Fecha", "Equipo_Local", "Equipo_Visitante",
+         "Goles_Local", "Goles_Visitante", "Resultado_Final")
+if (!all(req %in% names(datos_raw))) {
+  stop("Faltan columnas obligatorias: ", paste(setdiff(req, names(datos_raw)), collapse = ", "))
+}
+if (!all(datos_raw$Resultado_Final %in% c("H", "D", "A"))) {
+  stop("Resultado_Final debe contener solo H, D o A.")
+}
+
+# ---- 2. Fechas: la base mezcla dd/mm/aa y dd/mm/aaaa (nunca leer con un solo formato) ----
+fechas_txt <- trimws(as.character(datos_raw$Fecha))
+largo_fecha <- table(nchar(fechas_txt))
+fecha <- as.Date(rep(NA_character_, length(fechas_txt)))
+i_largo <- nchar(fechas_txt) == 10
+fecha[i_largo]  <- as.Date(fechas_txt[i_largo],  format = "%d/%m/%Y")
+fecha[!i_largo] <- as.Date(fechas_txt[!i_largo], format = "%d/%m/%y")
+if (anyNA(fecha)) stop("Hay fechas que no se pudieron interpretar.")
+
+anio_ini  <- as.integer(format(fecha, "%Y")) - (as.integer(format(fecha, "%m")) < 7)
+temporada <- sprintf("%d/%02d", anio_ini, (anio_ini + 1) %% 100)
+
+meta <- data.frame(
+  id = seq_len(nrow(datos_raw)),
+  Liga = datos_raw$Liga,
+  Fecha_dt = fecha,
+  temporada = temporada,
+  # proxy de jornada: semana de calendario martes-lunes (agrupa partidos que comparten condiciones)
+  jornada = floor((as.numeric(fecha) - 5) / 7),
+  Equipo_Local = datos_raw$Equipo_Local,
+  Equipo_Visitante = datos_raw$Equipo_Visitante,
+  Resultado_Final = datos_raw$Resultado_Final,
+  stringsAsFactors = FALSE
+)
+resultados <- c("Local", "Empate", "Visitante")
+Y <- cbind(Local     = as.numeric(meta$Resultado_Final == "H"),
+           Empate    = as.numeric(meta$Resultado_Final == "D"),
+           Visitante = as.numeric(meta$Resultado_Final == "A"))
+
+# ---- 3. Operadores detectados en la base ----
+ops_all <- sub("_P_Local_Mult$", "", grep("_P_Local_Mult$", names(datos_raw), value = TRUE))
+tiene_cuotas <- vapply(ops_all, function(op) {
+  all(paste0(op, c("_Local", "_Empate", "_Visitante")) %in% names(datos_raw))
+}, logical(1))
+ops_all <- ops_all[tiene_cuotas]
+if (length(ops_all) < 2) stop("Se necesitan al menos dos operadores con cuotas originales.")
+
+ops_ref_esp <- c("Pinnacle_Cierre", "Promedio_Apertura")
+casas   <- setdiff(ops_all, ops_ref_esp)
+ops_cmp <- setdiff(ops_all, "Pinnacle_Cierre")   # comparables sobre una muestra común
+tipo_op <- function(op) ifelse(op == "Pinnacle_Cierre", "Cierre",
+                        ifelse(op == "Promedio_Apertura", "Promedio de las casas comparadas (apertura)",
+                               "Casa individual (pre-partido)"))
+
+# ---- 4. Advertencia de la fuente sobre Pinnacle (desde 23/07/2025) ----
+fecha_pinn <- as.Date("2025-07-23")
+pinnacle_afectado <- any(meta$Fecha_dt >= fecha_pinn)
+```
+
+```{r funciones, include=FALSE}
+f1 <- function(x) formatC(x, format = "f", digits = 1)
+f2 <- function(x) formatC(x, format = "f", digits = 2)
+f3 <- function(x) formatC(x, format = "f", digits = 3)
+f4 <- function(x) formatC(x, format = "f", digits = 4)
+# Diferencias minúsculas en puntos porcentuales (sin notación científica)
+fpp <- function(x) ifelse(x * 100 < 0.0001, "menos de 0.0001 p.p.", paste0(formatC(x * 100, format = "f", digits = 4), " p.p."))
+fpe <- function(p) ifelse(p < 0.001, "p < 0.001", paste0("p = ", formatC(p, format = "f", digits = 3)))   # "p = 0.012" o "p < 0.001"
+fp <- function(p) ifelse(is.na(p), "NA", ifelse(p < 0.001, "<0.001", formatC(p, format = "f", digits = 3)))
+
+# Intervalo de Wilson
+wilson <- function(x, n, conf = 0.95) {
+  z <- qnorm(1 - (1 - conf) / 2); ph <- x / n; den <- 1 + z^2 / n
+  centro <- (ph + z^2 / (2 * n)) / den
+  mitad <- z * sqrt(ph * (1 - ph) / n + z^2 / (4 * n^2)) / den
+  data.frame(inf = centro - mitad, sup = centro + mitad)
+}
+
+# Cuotas válidas (> 1, numéricas); fila completa NA si alguna cuota es inválida
+get_odds <- function(op) {
+  m <- cbind(Local     = as.numeric(datos_raw[[paste0(op, "_Local")]]),
+             Empate    = as.numeric(datos_raw[[paste0(op, "_Empate")]]),
+             Visitante = as.numeric(datos_raw[[paste0(op, "_Visitante")]]))
+  m[!is.finite(m) | m <= 1] <- NA
+  malo <- rowSums(is.na(m)) > 0
+  if (grepl("^Pinnacle", op) && pinnacle_afectado) malo <- malo | meta$Fecha_dt >= fecha_pinn
+  m[malo, ] <- NA
+  m
+}
+
+# Tres métodos de remoción del margen
+prob_mult <- function(o) { q <- 1 / o; q / rowSums(q) }
+
+prob_pot <- function(o) {   # p_i = (1/o_i)^c, con c > 1 tal que sum(p_i) = 1
+  out <- matrix(NA_real_, nrow(o), 3, dimnames = dimnames(o))
+  for (i in seq_len(nrow(o))) {
+    if (anyNA(o[i, ])) next
+    q <- 1 / o[i, ]
+    f <- function(cc) sum(q^cc) - 1
+    cc <- tryCatch(uniroot(f, c(1, 200), tol = 1e-12)$root, error = function(e) NA_real_)
+    if (!is.na(cc)) out[i, ] <- q^cc
+  }
+  out
+}
+
+prob_shin <- function(o) {  # Shin (1992/1993): margen asociado a apostadores informados (parámetro z)
+  out <- matrix(NA_real_, nrow(o), 3, dimnames = dimnames(o))
+  for (i in seq_len(nrow(o))) {
+    if (anyNA(o[i, ])) next
+    q <- 1 / o[i, ]; S <- sum(q)
+    f <- function(z) sum((sqrt(z^2 + 4 * (1 - z) * q^2 / S) - z) / (2 * (1 - z))) - 1
+    z <- tryCatch(uniroot(f, c(1e-9, 0.99999), tol = 1e-12)$root, error = function(e) NA_real_)
+    if (!is.na(z)) out[i, ] <- (sqrt(z^2 + 4 * (1 - z) * q^2 / S) - z) / (2 * (1 - z))
+  }
+  out
+}
+
+# Reglas de puntuación por partido
+brier_i <- function(P, Yi) rowSums((P - Yi)^2)
+rps_i   <- function(P, Yi) 0.5 * ((P[, 1] - Yi[, 1])^2 + ((P[, 1] + P[, 2]) - (Yi[, 1] + Yi[, 2]))^2)
+ll_i    <- function(P, Yi) -rowSums(Yi * log(pmin(pmax(P, 1e-12), 1)))
+
+# Agrupamiento y curva de calibración
+breaks_bins <- function(p, k, tipo = "cuantil") {
+  if (tipo == "cuantil") unique(quantile(p, probs = seq(0, 1, length.out = k + 1), names = FALSE, na.rm = TRUE))
+  else seq(0, 1, length.out = k + 1)
+}
+bin_calib <- function(p, y, k, tipo = "cuantil") {
+  ok <- is.finite(p) & is.finite(y); p <- p[ok]; y <- y[ok]
+  br <- breaks_bins(p, k, tipo)
+  b  <- findInterval(p, br, rightmost.closed = TRUE, all.inside = TRUE)
+  tab <- data.frame(b = b, p = p, y = y) %>%
+    group_by(b) %>%
+    summarise(n = n(), p_min = min(p), p_max = max(p), p_med = mean(p), x = sum(y), f_obs = mean(y)) %>%
+    ungroup()
+  w <- wilson(tab$x, tab$n)
+  tab$inf <- w$inf; tab$sup <- w$sup
+  tab$desv_pp  <- (tab$f_obs - tab$p_med) * 100
+  tab$desv_inf <- (tab$inf - tab$p_med) * 100
+  tab$desv_sup <- (tab$sup - tab$p_med) * 100
+  tab
+}
+ece_tab <- function(tab) sum(tab$n / sum(tab$n) * abs(tab$f_obs - tab$p_med)) * 100   # en p.p.
+
+# Hosmer-Lemeshow sobre los mismos intervalos de la curva (gl = g - 2)
+hl_tab <- function(tab) {
+  E <- tab$p_med * tab$n; v <- tab$n * tab$p_med * (1 - tab$p_med)
+  X2 <- sum((tab$x - E)^2 / v); g <- nrow(tab); gl <- g - 2
+  list(X2 = X2, g = g, p = if (gl >= 1) pchisq(X2, gl, lower.tail = FALSE) else NA_real_)
+}
+
+# ECE observado vs. su distribución bajo calibración perfecta (simulación; condicional en las probabilidades)
+ece_nula <- function(p, y, k, B) {
+  ok <- is.finite(p) & is.finite(y); p <- p[ok]; y <- y[ok]
+  br <- breaks_bins(p, k); b <- findInterval(p, br, rightmost.closed = TRUE, all.inside = TRUE)
+  f <- function(yy) { rs <- rowsum(cbind(p, yy), b); sum(abs(rs[, 2] - rs[, 1])) / length(p) }
+  obs <- f(y)
+  sim <- replicate(B, f(rbinom(length(p), 1, p)))
+  c(obs = obs * 100, esp = mean(sim) * 100, p = (1 + sum(sim >= obs)) / (B + 1))
+}
+
+# Recalibración logística: pendiente (b), calibración global (a, con b = 1) y prueba conjunta a = 0, b = 1
+slope_one <- function(p, y) {
+  ok <- is.finite(p) & is.finite(y); p <- pmin(pmax(p[ok], 1e-6), 1 - 1e-6); y <- y[ok]
+  lp <- qlogis(p)
+  m1 <- glm(y ~ lp, family = binomial())
+  mi <- glm(y ~ 1 + offset(lp), family = binomial())
+  m0 <- glm(y ~ 0 + offset(lp), family = binomial())
+  s1 <- summary(m1)$coefficients; si <- summary(mi)$coefficients
+  lr <- 2 * (as.numeric(logLik(m1)) - as.numeric(logLik(m0)))
+  data.frame(pend = s1["lp", "Estimate"], pend_se = s1["lp", "Std. Error"],
+             citl = si[1, "Estimate"], citl_se = si[1, "Std. Error"],
+             lr_p = pchisq(lr, 2, lower.tail = FALSE))
+}
+
+# Bootstrap por bloques (jornada) para una media de diferencias pareadas
+boot_mean_cluster <- function(d, cl, B) {
+  ok <- is.finite(d); d <- d[ok]; cl <- cl[ok]
+  S <- as.numeric(tapply(d, cl, sum)); N <- as.numeric(tapply(d, cl, length)); G <- length(S)
+  bs <- replicate(B, { i <- sample.int(G, G, replace = TRUE); sum(S[i]) / sum(N[i]) })
+  list(est = sum(S) / sum(N),
+       inf = quantile(bs, 0.025, names = FALSE), sup = quantile(bs, 0.975, names = FALSE),
+       p = min(1, 2 * min(sum(bs <= 0) + 1, sum(bs >= 0) + 1) / (B + 1)))
+}
+
+# Bootstrap por bloques para la pendiente de calibración
+boot_slope <- function(p, y, cl, B) {
+  ok <- is.finite(p) & is.finite(y); p <- p[ok]; y <- y[ok]; cl <- cl[ok]
+  lp <- qlogis(pmin(pmax(p, 1e-6), 1 - 1e-6))
+  filas <- split(seq_along(p), cl); G <- length(filas)
+  bs <- replicate(B, {
+    ii <- unlist(filas[sample.int(G, G, replace = TRUE)], use.names = FALSE)
+    unname(coef(suppressWarnings(glm(y[ii] ~ lp[ii], family = binomial())))[2])
+  })
+  quantile(bs, c(0.025, 0.975), names = FALSE)
+}
+
+# Descomposición de Murphy del Brier multiclase (suma de las tres descomposiciones binarias)
+murphy <- function(P, Yi, k) {
+  out <- sapply(1:3, function(j) {
+    tab <- bin_calib(P[, j], Yi[, j], k); N <- sum(tab$n); ob <- mean(Yi[, j])
+    c(rel = sum(tab$n * (tab$p_med - tab$f_obs)^2) / N,
+      res = sum(tab$n * (tab$f_obs - ob)^2) / N,
+      unc = ob * (1 - ob),
+      rel_esp = sum(tab$p_med * (1 - tab$p_med)) / N)   # fiabilidad esperada solo por azar muestral
+  })
+  rowSums(out)
+}
+```
+
+```{r probabilidades, include=FALSE}
+metodos <- c("Mult", "Pot", "Shin")
+nombre_met <- c(Mult = "Multiplicativo", Pot = "Potencia", Shin = "Shin")
+met_p <- params$metodo_principal
+if (!met_p %in% metodos) stop("params$metodo_principal debe ser Mult, Pot o Shin.")
+k_bins <- params$k_bins
+k_set  <- sort(unique(c(5, k_bins, 10)))
+B_boot <- params$B_boot; B_sim <- params$B_sim; B_slope <- min(500, B_boot)
+
+ods <- setNames(lapply(ops_all, get_odds), ops_all)
+PR  <- list(Mult = lapply(ods, prob_mult),
+            Pot  = lapply(ods, prob_pot),
+            Shin = lapply(ods, prob_shin))
+
+op_cons <- if ("Promedio_Apertura" %in% ops_all) "Promedio_Apertura" else casas[1]
+ref     <- if (params$operador_ref %in% ops_all) params$operador_ref else casas[1]
+
+idx_com <- which(complete.cases(do.call(cbind, ods[ops_cmp])))
+n_com   <- length(idx_com)
+Yc      <- Y[idx_com, , drop = FALSE]
+cl_c    <- meta$jornada[idx_com]
+n_clus  <- length(unique(meta$jornada))
+```
+
+```{r calc_validacion, include=FALSE}
+n_part <- nrow(meta)
+dup <- sum(duplicated(paste(meta$Fecha_dt, meta$Equipo_Local, meta$Equipo_Visitante)))
+res_goles <- ifelse(datos_raw$Goles_Local > datos_raw$Goles_Visitante, "H",
+                    ifelse(datos_raw$Goles_Local < datos_raw$Goles_Visitante, "A", "D"))
+inc_res <- sum(res_goles != datos_raw$Resultado_Final, na.rm = TRUE)
+
+cuotas_invalidas <- sum(vapply(ops_all, function(op) {
+  m <- cbind(as.numeric(datos_raw[[paste0(op, "_Local")]]),
+             as.numeric(datos_raw[[paste0(op, "_Empate")]]),
+             as.numeric(datos_raw[[paste0(op, "_Visitante")]]))
+  sum(!is.na(m) & m <= 1)
+}, numeric(1)))
+filas_incompletas <- vapply(ops_all, function(op) sum(is.na(ods[[op]][, 1])), numeric(1))
+
+suma_max <- max(vapply(c("Mult", "Pot"), function(met) {
+  max(vapply(ops_all, function(op) {
+    m <- cbind(as.numeric(datos_raw[[paste0(op, "_P_Local_", met)]]),
+               as.numeric(datos_raw[[paste0(op, "_P_Empate_", met)]]),
+               as.numeric(datos_raw[[paste0(op, "_P_Vis_", met)]]))
+    max(abs(rowSums(m) - 1), na.rm = TRUE)
+  }, numeric(1)))
+}, numeric(1)))
+
+dif_recalc <- vapply(c("Mult", "Pot"), function(met) {
+  max(vapply(ops_all, function(op) {
+    m <- cbind(as.numeric(datos_raw[[paste0(op, "_P_Local_", met)]]),
+               as.numeric(datos_raw[[paste0(op, "_P_Empate_", met)]]),
+               as.numeric(datos_raw[[paste0(op, "_P_Vis_", met)]]))
+    max(abs(unname(PR[[met]][[op]]) - m), na.rm = TRUE)
+  }, numeric(1)))
+}, numeric(1))
+
+marg_mat <- sapply(ods, function(o) rowSums(1 / o) - 1)       # n x K (fracción)
+atip <- which(marg_mat > 0.10, arr.ind = TRUE)
+atip_df <- if (nrow(atip) > 0) {
+  data.frame(
+    Partido  = paste(meta$Equipo_Local[atip[, 1]], "vs", meta$Equipo_Visitante[atip[, 1]]),
+    Fecha    = format(meta$Fecha_dt[atip[, 1]], "%d/%m/%Y"),
+    Operador = colnames(marg_mat)[atip[, 2]],
+    `Margen (p.p.)` = round(marg_mat[atip] * 100, 1),
+    check.names = FALSE, stringsAsFactors = FALSE)
+} else {
+  data.frame(Partido = character(), Fecha = character(), Operador = character(),
+             `Margen (p.p.)` = numeric(), check.names = FALSE, stringsAsFactors = FALSE)
+}
+
+# Trazabilidad de los márgenes atípicos: qué cuota se aparta del consenso y cómo terminó el partido
+nom_res <- c(H = "Local", D = "Empate", A = "Visitante")
+if (nrow(atip) > 0) {
+  atip_df$`Cuota que se aparta del consenso` <- vapply(seq_len(nrow(atip)), function(j) {
+    i <- atip[j, 1]; op <- colnames(marg_mat)[atip[j, 2]]
+    otros <- setdiff(ops_cmp, c(op, "Promedio_Apertura"))
+    med <- apply(sapply(otros, function(o) ods[[o]][i, ]), 1, median, na.rm = TRUE)
+    k <- which.max(abs(log(ods[[op]][i, ] / med)))
+    sprintf("%s: %.2f (mediana de los demás: %.2f)", resultados[k], ods[[op]][i, k], med[k])
+  }, character(1))
+  atip_df$`Resultado del partido` <- sprintf("%s (%d-%d)", nom_res[meta$Resultado_Final[atip[, 1]]],
+                                             datos_raw$Goles_Local[atip[, 1]], datos_raw$Goles_Visitante[atip[, 1]])
+}
+
+# Trazabilidad de los datos faltantes: qué partido, qué operador y qué cuotas
+falt_df <- bind_rows(lapply(ops_all, function(op) {
+  ii <- which(is.na(ods[[op]][, 1]))
+  if (length(ii) == 0) return(NULL)
+  bruto <- cbind(as.numeric(datos_raw[[paste0(op, "_Local")]]), as.numeric(datos_raw[[paste0(op, "_Empate")]]),
+                 as.numeric(datos_raw[[paste0(op, "_Visitante")]]))
+  data.frame(
+    Partido  = paste(meta$Equipo_Local[ii], "vs", meta$Equipo_Visitante[ii]),
+    Fecha    = format(meta$Fecha_dt[ii], "%d/%m/%Y"),
+    Temporada = meta$temporada[ii],
+    Operador = op,
+    `Cuotas faltantes o inválidas` = vapply(ii, function(i)
+      paste(resultados[is.na(bruto[i, ]) | bruto[i, ] <= 1], collapse = ", "), character(1)),
+    Tratamiento = ifelse(op == "Pinnacle_Cierre",
+                         "Excluido solo de la comparación apertura-cierre",
+                         ifelse(op %in% ops_cmp, "Excluido de la muestra común entre operadores",
+                                "Excluido solo de los análisis de este operador")),
+    check.names = FALSE, stringsAsFactors = FALSE)
+}))
+
+brier_ops <- function(idx) vapply(ops_cmp, function(op)
+  mean(brier_i(PR[[met_p]][[op]][idx, , drop = FALSE], Y[idx, , drop = FALSE])), numeric(1))
+idx_sin_atip <- setdiff(idx_com, atip[, 1])
+delta_atip <- if (nrow(atip) > 0) max(abs(brier_ops(idx_sin_atip) - brier_ops(idx_com))) else 0
+
+validaciones <- data.frame(
+  Validación = c("Partidos en la base", "Partidos duplicados (fecha + equipos)",
+                 "Resultado_Final inconsistente con los goles", "Cuotas <= 1 o no numéricas",
+                 "Partidos con cuotas incompletas (suma sobre operadores)",
+                 "Las probabilidades normalizadas de la base suman 100 % (mayor desviación encontrada)",
+                 "La base coincide con el recálculo desde las cuotas (mayor diferencia: Mult / Pot)",
+                 "Márgenes > 10 p.p. (posible error de captura)",
+                 "Fechas: longitudes de texto detectadas"),
+  Resultado = c(as.character(n_part), as.character(dup), as.character(inc_res),
+                as.character(cuotas_invalidas), as.character(sum(filas_incompletas)),
+                fpp(suma_max),
+                paste(fpp(dif_recalc[["Mult"]]), "/", fpp(dif_recalc[["Pot"]])),
+                as.character(nrow(atip)),
+                paste(paste0(names(largo_fecha), " caracteres: ", as.integer(largo_fecha), " filas"), collapse = "; ")),
+  Estado = c("Informativo", ifelse(dup == 0, "OK", "Revisar"), ifelse(inc_res == 0, "OK", "Revisar"),
+             ifelse(cuotas_invalidas == 0, "OK", "Excluidas"),
+             ifelse(sum(filas_incompletas) == 0, "OK", "Excluidas por operador"),
+             ifelse(suma_max < 1e-4, "OK (tolerancia: 0.01 p.p.)", "Revisar"),
+             ifelse(max(dif_recalc) < 1e-4, "OK (tolerancia: 0.01 p.p.)", "Revisar"),
+             ifelse(nrow(atip) == 0, "OK", "Marcado"),
+             ifelse(length(largo_fecha) > 1, "Formatos mixtos: lectura explícita", "OK")),
+  check.names = FALSE, stringsAsFactors = FALSE)
+
+cobertura <- bind_rows(lapply(ops_all, function(op) {
+  data.frame(operador = op, Liga = meta$Liga, temporada = meta$temporada, ok = !is.na(ods[[op]][, 1])) %>%
+    group_by(operador, Liga, temporada) %>% summarise(validos = sum(ok), total = n()) %>% ungroup()
+}))
+cob_wide <- cobertura %>%
+  mutate(txt = sprintf("%d / %d", validos, total)) %>%
+  select(Operador = operador, Liga, temporada, txt) %>%
+  pivot_wider(names_from = temporada, values_from = txt) %>%
+  mutate(Tipo = tipo_op(Operador)) %>%
+  select(Operador, Tipo, everything())
+```
+
+```{r calc_margen, include=FALSE}
+marg_long <- data.frame(
+  id = rep(meta$id, ncol(marg_mat)),
+  operador = rep(colnames(marg_mat), each = nrow(marg_mat)),
+  temporada = rep(meta$temporada, ncol(marg_mat)),
+  margen = as.vector(marg_mat) * 100, stringsAsFactors = FALSE)
+
+tab_marg <- marg_long %>% filter(!is.na(margen)) %>%
+  group_by(operador) %>%
+  summarise(n = n(), media = mean(margen), de = sd(margen), p50 = median(margen),
+            minimo = min(margen), maximo = max(margen)) %>%
+  ungroup() %>% mutate(tipo = tipo_op(operador)) %>% arrange(media)
+
+marg_temp <- marg_long %>% filter(!is.na(margen)) %>%
+  group_by(operador, temporada) %>% summarise(media = mean(margen)) %>% ungroup() %>%
+  pivot_wider(names_from = temporada, values_from = media)
+
+tab_marg_casas <- tab_marg %>% filter(operador %in% casas)
+m_min  <- min(tab_marg_casas$media); m_max <- max(tab_marg_casas$media)
+m_prom <- mean(tab_marg_casas$media)
+op_m_min <- tab_marg_casas$operador[which.min(tab_marg_casas$media)]
+op_m_max <- tab_marg_casas$operador[which.max(tab_marg_casas$media)]
+ev_prom <- -m_prom / (100 + m_prom) * 100
+
+tab_marg$ev <- -tab_marg$media / (100 + tab_marg$media) * 100
+
+# Retorno esperado por unidad si las probabilidades sin margen fueran las verdaderas: E = p_i * o_i - 1.
+# Con el multiplicativo es -m/(1+m) para todo resultado; con potencia y Shin varía por resultado, pero siempre es negativo.
+ev_met <- vapply(metodos, function(m) mean(vapply(casas, function(op)
+  mean(PR[[m]][[op]] * ods[[op]] - 1, na.rm = TRUE), numeric(1))) * 100, numeric(1))
+ev_main <- ev_met[[met_p]]
+ev_neg_todos <- all(vapply(metodos, function(m) all(unlist(lapply(casas, function(op)
+  PR[[m]][[op]] * ods[[op]] - 1)) < 0, na.rm = TRUE), logical(1)))
+txt_ev <- paste0("Si las probabilidades sin margen del método principal (", nombre_met[[met_p]], ") fueran las verdaderas, el retorno esperado medio por unidad apostada sería de **", f1(ev_main), "%** (entre ",
+                 f1(min(ev_met)), "% y ", f1(max(ev_met)), "% según el método de remoción)",
+                 ifelse(ev_neg_todos, ", y es negativo para todo resultado de todo partido con los tres métodos", ""), ".")
+```
+
+```{r calc_calibracion, include=FALSE}
+cal_grid <- function(met, ks) {
+  g <- expand.grid(operador = ops_all, resultado = resultados, k = ks, stringsAsFactors = FALSE)
+  bind_rows(lapply(seq_len(nrow(g)), function(i) {
+    p <- PR[[met]][[g$operador[i]]][, g$resultado[i]]; y <- Y[, g$resultado[i]]
+    tab <- bin_calib(p, y, g$k[i]); hl <- hl_tab(tab)
+    data.frame(metodo = met, operador = g$operador[i], resultado = g$resultado[i], k = g$k[i],
+               n = sum(is.finite(p)), ece_pp = ece_tab(tab),
+               hl_x2 = hl$X2, hl_g = hl$g, hl_p = hl$p, stringsAsFactors = FALSE)
+  }))
+}
+cal_all <- bind_rows(lapply(metodos, cal_grid, ks = k_set)) %>%
+  group_by(metodo, k) %>% mutate(hl_p_holm = p.adjust(hl_p, "holm")) %>% ungroup()
+cal_main <- cal_all %>% filter(metodo == met_p, k == k_bins)
+n_hl_tot <- nrow(cal_main); n_hl_sig <- sum(cal_main$hl_p_holm < 0.05, na.rm = TRUE)
+n_hl_sig_raw <- sum(cal_main$hl_p < 0.05, na.rm = TRUE)
+
+sim_tab <- bind_rows(lapply(ops_all, function(op) bind_rows(lapply(resultados, function(r) {
+  z <- ece_nula(PR[[met_p]][[op]][, r], Y[, r], k_bins, B_sim)
+  data.frame(operador = op, resultado = r, ece_obs = z[["obs"]], ece_esp = z[["esp"]], p_sim = z[["p"]])
+}))))
+sim_tab$p_sim_holm <- p.adjust(sim_tab$p_sim, "holm")
+n_sim_sig <- sum(sim_tab$p_sim_holm < 0.05)
+
+cal_ref <- bind_rows(lapply(resultados, function(r) {
+  t <- bin_calib(PR[[met_p]][[op_cons]][, r], Y[, r], k_bins); t$resultado <- r; t
+}))
+cal_ref$resultado <- factor(cal_ref$resultado, levels = resultados)
+max_dev_cons <- max(abs(cal_ref$desv_pp))
+n_bins_fuera <- sum(cal_ref$inf > cal_ref$p_med | cal_ref$sup < cal_ref$p_med)
+mde_bin <- 1.96 * sqrt(0.25 / (n_com / k_bins)) * 100
+
+slope_tab <- bind_rows(lapply(metodos, function(m) bind_rows(lapply(ops_all, function(op)
+  bind_rows(lapply(c(resultados, "Todos"), function(r) {
+    if (r == "Todos") { p <- as.vector(PR[[m]][[op]]); y <- as.vector(Y) }
+    else { p <- PR[[m]][[op]][, r]; y <- Y[, r] }
+    s <- slope_one(p, y); s$metodo <- m; s$operador <- op; s$resultado <- r; s
+  }))))))
+slope_tab <- slope_tab %>% mutate(inf = pend - 1.96 * pend_se, sup = pend + 1.96 * pend_se,
+                                  metodo_lab = unname(nombre_met[metodo]))
+
+sl_boot <- bind_rows(lapply(c(resultados, "Todos"), function(r) {
+  if (r == "Todos") { p <- as.vector(PR[[met_p]][[op_cons]]); y <- as.vector(Y); cl <- rep(meta$jornada, 3) }
+  else { p <- PR[[met_p]][[op_cons]][, r]; y <- Y[, r]; cl <- meta$jornada }
+  ci <- boot_slope(p, y, cl, B_slope)
+  data.frame(resultado = r, inf_boot = ci[1], sup_boot = ci[2])
+}))
+sl_cons <- slope_tab %>% filter(operador == op_cons, metodo == met_p) %>%
+  left_join(sl_boot, by = "resultado")
+sl_todos <- sl_cons %>% filter(resultado == "Todos")
+```
+
+```{r calc_scores, include=FALSE}
+score_op <- function(op, met, idx) {
+  P <- PR[[met]][[op]][idx, , drop = FALSE]; Yi <- Y[idx, , drop = FALSE]
+  data.frame(operador = op, metodo = met, n = length(idx),
+             brier = mean(brier_i(P, Yi)), logloss = mean(ll_i(P, Yi)), rps = mean(rps_i(P, Yi)))
+}
+tab_scores <- bind_rows(lapply(metodos, function(m) bind_rows(lapply(ops_cmp, score_op, met = m, idx = idx_com))))
+
+frec_hist <- colMeans(Yc)
+Mh <- matrix(frec_hist, n_com, 3, byrow = TRUE); Mu <- matrix(1 / 3, n_com, 3)
+base <- data.frame(
+  operador = c("Línea base histórica", "Línea base uniforme"),
+  brier   = c(mean(brier_i(Mh, Yc)), mean(brier_i(Mu, Yc))),
+  logloss = c(mean(ll_i(Mh, Yc)),    mean(ll_i(Mu, Yc))),
+  rps     = c(mean(rps_i(Mh, Yc)),   mean(rps_i(Mu, Yc))))
+brier_hist <- base$brier[1]; brier_uni <- base$brier[2]
+
+tab_p <- tab_scores %>% filter(metodo == met_p) %>%
+  mutate(bss_hist = 1 - brier / brier_hist, bss_uni = 1 - brier / brier_uni) %>% arrange(brier)
+
+mur <- bind_rows(lapply(ops_cmp, function(op) {
+  P <- PR[[met_p]][[op]][idx_com, , drop = FALSE]; z <- murphy(P, Yc, k_bins)
+  data.frame(operador = op, brier = mean(brier_i(P, Yc)), rel = z[["rel"]], res = z[["res"]], unc = z[["unc"]], rel_esp = z[["rel_esp"]])
+})) %>% mutate(resid = brier - (rel - res + unc)) %>% arrange(brier)
+
+rho_rps <- suppressWarnings(cor(tab_p$brier, tab_p$rps, method = "spearman"))
+b_ref <- tab_p$brier[tab_p$operador == ref]
+mejora_ref <- brier_hist - b_ref
+```
+
+```{r calc_comparacion, include=FALSE}
+Bref <- brier_i(PR[[met_p]][[ref]][idx_com, , drop = FALSE], Yc)
+comp <- bind_rows(lapply(setdiff(ops_cmp, ref), function(op) {
+  d <- brier_i(PR[[met_p]][[op]][idx_com, , drop = FALSE], Yc) - Bref
+  b <- boot_mean_cluster(d, cl_c, B_boot)
+  w <- suppressWarnings(wilcox.test(d, mu = 0, exact = FALSE)$p.value)
+  data.frame(operador = op, dif = b$est, inf = b$inf, sup = b$sup, p_boot = b$p, p_wilcox = w)
+}))
+comp$p_boot_holm   <- p.adjust(comp$p_boot, "holm")
+comp$p_wilcox_holm <- p.adjust(comp$p_wilcox, "holm")
+
+mat_b <- sapply(casas, function(op) brier_i(PR[[met_p]][[op]][idx_com, , drop = FALSE], Yc))
+fr <- friedman.test(mat_b)
+b_casas <- tab_p$brier[tab_p$operador %in% casas]
+rango_b <- max(b_casas) - min(b_casas)
+razon_rango <- rango_b / mejora_ref
+n_comp_sig <- sum(comp$p_boot_holm < 0.05)
+```
+
+```{r calc_sensibilidad, include=FALSE}
+# Todas las comparaciones se hacen contra el método principal (params$metodo_principal)
+otros_met <- setdiff(metodos, met_p)
+tab_met <- tab_scores %>% select(operador, metodo, brier) %>% pivot_wider(names_from = metodo, values_from = brier)
+rho_otros <- vapply(otros_met, function(m) suppressWarnings(cor(tab_met[[met_p]], tab_met[[m]], method = "spearman")), numeric(1))
+txt_rho <- paste(sprintf("%s-%s = %s", nombre_met[[met_p]], nombre_met[otros_met], f2(rho_otros)), collapse = "; ")
+dif_brier_met <- max(abs(c(tab_met$Mult - tab_met$Pot, tab_met$Mult - tab_met$Shin, tab_met$Pot - tab_met$Shin)))
+
+dif_prob <- bind_rows(lapply(otros_met, function(m) {
+  data.frame(metodo = m, pm = as.vector(PR[[met_p]][[op_cons]]), pq = as.vector(PR[[m]][[op_cons]]))
+})) %>% filter(is.finite(pm)) %>%
+  mutate(d = (pq - pm) * 100,
+         tramo = cut(pm, c(0, 0.15, 0.30, 0.45, 0.60, 1), include.lowest = TRUE))
+mecan <- dif_prob %>% group_by(metodo, tramo) %>% summarise(n = n(), dif = mean(d)) %>% ungroup()
+max_dif_prob <- max(abs(dif_prob$d))
+
+# Lectura automática del mecanismo: qué hace cada método en los extremos frente al principal
+tramos_ext <- levels(dif_prob$tramo)[c(1, nlevels(dif_prob$tramo))]
+txt_mecan <- paste(vapply(otros_met, function(m) {
+  lo <- mecan$dif[mecan$metodo == m & mecan$tramo == tramos_ext[1]]
+  hi <- mecan$dif[mecan$metodo == m & mecan$tramo == tramos_ext[2]]
+  sprintf("Frente a %s, el método %s asigna en promedio %s p.p. a los resultados más improbables (tramo %s) y %s p.p. a los favoritos (tramo %s).",
+          nombre_met[[met_p]], nombre_met[[m]], sprintf("%+.2f", lo), tramos_ext[1], sprintf("%+.2f", hi), tramos_ext[2])
+}, character(1)), collapse = " ")
+
+# ¿Se mantiene la comparación entre casas (Friedman) con cada método?
+marg_casa <- setNames(tab_marg$media, tab_marg$operador)[casas]
+fried_met <- bind_rows(lapply(metodos, function(m) {
+  mat <- sapply(casas, function(op) brier_i(PR[[m]][[op]][idx_com, , drop = FALSE], Yc))
+  rk  <- colMeans(t(apply(mat, 1, rank)))          # puesto medio de cada casa partido a partido (1 = mejor)
+  bm  <- colMeans(mat)
+  b_ref_m <- mean(brier_i(PR[[m]][[ref]][idx_com, , drop = FALSE], Yc))
+  data.frame(metodo = m, p = friedman.test(mat)$p.value, rango_mil = (max(bm) - min(bm)) * 1000,
+             razon = (max(bm) - min(bm)) / (brier_hist - b_ref_m),
+             mejor = names(which.min(rk)), peor = names(which.max(rk)),
+             rho_margen = suppressWarnings(cor(rk, marg_casa, method = "spearman")))
+}))
+fr_sig <- fried_met %>% filter(p < 0.05); fr_ns <- fried_met %>% filter(p >= 0.05)
+txt_fried <- if (nrow(fr_sig) == 0) {
+  paste0("Con los tres métodos la prueba de Friedman llega a la misma conclusión: ninguna casa pronostica sistemáticamente mejor que las demás (p entre ",
+         fp(min(fried_met$p)), " y ", fp(max(fried_met$p)), ").")
+} else if (nrow(fr_ns) == 0) {
+  paste0("Con los tres métodos la prueba de Friedman detecta diferencias entre casas (p entre ", fp(min(fried_met$p)), " y ", fp(max(fried_met$p)), ").")
+} else {
+  paste0("**Aquí el método sí cambia la conclusión de la prueba.** Con ", paste(nombre_met[fr_ns$metodo], collapse = " y "),
+         ", la prueba de Friedman no encuentra diferencias entre casas (", paste(fpe(fr_ns$p), collapse = " y "), "); con ",
+         paste(nombre_met[fr_sig$metodo], collapse = " y "), " sí las encuentra (", paste(fpe(fr_sig$p), collapse = " y "), "). ",
+         "La explicación está en la última columna de la tabla: con ", paste(nombre_met[fr_sig$metodo], collapse = " y "),
+         ", el puesto de cada casa sigue casi exactamente su margen (correlación ", paste(f2(fr_sig$rho_margen), collapse = " y "),
+         "): la que menos cobra (", op_m_min, ") queda mejor y la que más cobra (", op_m_max, ") peor. ",
+         "Es decir, la diferencia detectada la produce la forma de quitar el margen, no lo que cada casa sabe del partido. ",
+         "En cualquier caso, el tamaño es mínimo: la distancia entre la mejor y la peor casa es de a lo sumo ", f1(max(fried_met$rango_mil)),
+         " milésimas de Brier, menos del ", ceiling(max(fried_met$razon) * 100), " % de lo que cualquiera mejora frente a la línea base histórica. ",
+         "La conclusión práctica no cambia con el método: las casas pronostican prácticamente igual.")
+}
+
+# ¿Cambia la decisión de las pruebas de calibración entre métodos?
+dec <- cal_all %>% filter(k == k_bins) %>%
+  mutate(rechaza = hl_p_holm < 0.05) %>%
+  select(operador, resultado, metodo, rechaza) %>% pivot_wider(names_from = metodo, values_from = rechaza)
+n_dec_dif <- sum(dec$Mult != dec$Pot | dec$Mult != dec$Shin | dec$Pot != dec$Shin, na.rm = TRUE)
+
+ece_met <- cal_all %>% filter(k == k_bins, operador == op_cons) %>%
+  select(metodo, resultado, ece_pp) %>% pivot_wider(names_from = resultado, values_from = ece_pp)
+pend_met <- slope_tab %>% filter(operador == op_cons, resultado == "Todos") %>%
+  select(metodo, pend, inf, sup)
+```
+
+```{r calc_cierre, include=FALSE}
+tiene_cierre <- all(c("Pinnacle", "Pinnacle_Cierre") %in% ops_all)
+oc_tab <- NULL; n_oc <- NA; marg_open <- NA; marg_close <- NA
+if (tiene_cierre) {
+  idx_oc <- which(complete.cases(ods[["Pinnacle"]], ods[["Pinnacle_Cierre"]]))
+  n_oc <- length(idx_oc); Yo <- Y[idx_oc, , drop = FALSE]; cl_o <- meta$jornada[idx_oc]
+  sc <- function(P) list(brier = brier_i(P, Yo), rps = rps_i(P, Yo), ll = ll_i(P, Yo))
+  Po <- sc(PR[[met_p]][["Pinnacle"]][idx_oc, , drop = FALSE])
+  Pc <- sc(PR[[met_p]][["Pinnacle_Cierre"]][idx_oc, , drop = FALSE])
+  etiq <- c(brier = "Brier", rps = "RPS", ll = "Log-loss")
+  oc_tab <- bind_rows(lapply(c("brier", "rps", "ll"), function(m) {
+    d <- Po[[m]] - Pc[[m]]; b <- boot_mean_cluster(d, cl_o, B_boot)
+    data.frame(metrica = etiq[[m]], apertura = mean(Po[[m]]), cierre = mean(Pc[[m]]),
+               dif = b$est, inf = b$inf, sup = b$sup, p = b$p)
+  }))
+  marg_open  <- mean(marg_mat[idx_oc, "Pinnacle"]) * 100
+  marg_close <- mean(marg_mat[idx_oc, "Pinnacle_Cierre"]) * 100
+}
+```
+
+```{r calc_temporal, include=FALSE}
+temp_tab <- bind_rows(lapply(resultados, function(r) {
+  data.frame(temporada = meta$temporada, p = PR[[met_p]][[op_cons]][, r], y = Y[, r]) %>%
+    filter(is.finite(p)) %>% group_by(temporada) %>%
+    summarise(n = n(), x = sum(y), pred = mean(p), obs = mean(y)) %>% ungroup() %>%
+    mutate(resultado = r)
+}))
+w_t <- wilson(temp_tab$x, temp_tab$n); temp_tab$inf <- w_t$inf; temp_tab$sup <- w_t$sup
+temp_tab$resultado <- factor(temp_tab$resultado, levels = resultados)
+temp_tab$desv_pp <- (temp_tab$obs - temp_tab$pred) * 100
+
+tt_brier <- bind_rows(lapply(unique(meta$temporada), function(s) {
+  ii <- which(meta$temporada == s & !is.na(PR[[met_p]][[op_cons]][, 1]))
+  P <- PR[[met_p]][[op_cons]][ii, , drop = FALSE]; Yi <- Y[ii, , drop = FALSE]
+  b <- mean(brier_i(P, Yi)); bu <- mean(brier_i(matrix(1 / 3, length(ii), 3), Yi))
+  data.frame(temporada = s, n = length(ii), brier = b, base_uni = bu, bss_uni = 1 - b / bu)
+}))
+tab_tasas <- table(meta$temporada, meta$Resultado_Final)
+chi_tasas <- suppressWarnings(chisq.test(tab_tasas))
+n_temp <- length(unique(meta$temporada))
+```
+
+```{r calc_var, include=FALSE}
+# ==== OBJETIVO SECUNDARIO: ¿estaban preparadas las casas para la inclusión del VAR? ====
+# "Preparadas" se operacionaliza así: en la(s) temporada(s) con VAR, las probabilidades sin margen
+# siguen igual de calibradas que antes y acompañan los cambios en la frecuencia de los resultados.
+tv    <- params$temporada_var
+temps <- sort(unique(meta$temporada))
+hay_var <- !is.null(tv) && tv %in% temps && any(temps < tv)
+
+if (hay_var) {
+  periodo <- factor(ifelse(meta$temporada >= tv, "Con VAR", "Sin VAR"), levels = c("Sin VAR", "Con VAR"))
+  lab_per <- c(`Sin VAR` = paste0("Sin VAR (", paste(temps[temps < tv], collapse = ", "), ")"),
+               `Con VAR` = paste0("Con VAR (", paste(temps[temps >= tv], collapse = ", "), ")"))
+  pal_per <- setNames(c("#2b6a9e", "#d1603d"), unname(lab_per))   # paleta validada (daltonismo incluido)
+  k_t <- params$k_bins_temp
+  Pm  <- PR[[met_p]][[op_cons]]
+  i0  <- which(periodo == "Sin VAR" & !is.na(Pm[, 1]))
+  i1  <- which(periodo == "Con VAR" & !is.na(Pm[, 1]))
+  cl_all <- meta$jornada
+
+  # Bootstrap por bloques de jornada, remuestreando por separado dentro de cada periodo
+  boot_two <- function(stat, a, b, B) {
+    g0 <- split(a, cl_all[a]); g1 <- split(b, cl_all[b])
+    est <- stat(a, b)
+    bs <- replicate(B, stat(unlist(g0[sample.int(length(g0), replace = TRUE)], use.names = FALSE),
+                            unlist(g1[sample.int(length(g1), replace = TRUE)], use.names = FALSE)))
+    list(est = est, inf = quantile(bs, 0.025, names = FALSE), sup = quantile(bs, 0.975, names = FALSE),
+         p = min(1, 2 * min(sum(bs <= 0) + 1, sum(bs >= 0) + 1) / (B + 1)))
+  }
+
+  # --- 1. Curvas de calibración por periodo (mercado promedio) ---
+  cal_per <- bind_rows(lapply(c("Sin VAR", "Con VAR"), function(g) bind_rows(lapply(resultados, function(r) {
+    ii <- if (g == "Sin VAR") i0 else i1
+    t <- bin_calib(Pm[ii, r], Y[ii, r], k_t); t$resultado <- r; t$periodo <- lab_per[[g]]; t
+  }))))
+  cal_per$resultado <- factor(cal_per$resultado, levels = resultados)
+  cal_per$periodo   <- factor(cal_per$periodo, levels = unname(lab_per))
+
+  # --- 2. ¿Acompañaron los precios el cambio en las frecuencias? (diferencia en diferencias) ---
+  did_tab <- bind_rows(lapply(resultados, function(r) {
+    st <- function(a, b) (mean(Y[b, r]) - mean(Pm[b, r])) - (mean(Y[a, r]) - mean(Pm[a, r]))
+    bt <- boot_two(st, i0, i1, B_boot)
+    data.frame(resultado = r,
+               pred0 = mean(Pm[i0, r]), obs0 = mean(Y[i0, r]), pred1 = mean(Pm[i1, r]), obs1 = mean(Y[i1, r]),
+               did = bt$est, inf = bt$inf, sup = bt$sup, p = bt$p, stringsAsFactors = FALSE)
+  })) %>% mutate(dpred = pred1 - pred0, dobs = obs1 - obs0, p_holm = p.adjust(p, "holm"))
+
+  # --- 3. Prueba formal de cambio en la calibración: y ~ lp * periodo (razón de verosimilitudes, 2 gl) ---
+  post <- as.numeric(periodo == "Con VAR")
+  lr_tab <- bind_rows(lapply(c(resultados, "Todos"), function(r) {
+    if (r == "Todos") { ii <- c(i0, i1); p <- as.vector(Pm[ii, ]); y <- as.vector(Y[ii, ]); g <- rep(post[ii], 3) }
+    else { ii <- c(i0, i1); p <- Pm[ii, r]; y <- Y[ii, r]; g <- post[ii] }
+    lp <- qlogis(pmin(pmax(p, 1e-6), 1 - 1e-6))
+    m0 <- glm(y ~ lp, family = binomial()); m1 <- glm(y ~ lp * g, family = binomial())
+    lr <- 2 * (as.numeric(logLik(m1)) - as.numeric(logLik(m0)))
+    s1 <- slope_one(p[g == 0], y[g == 0]); s2 <- slope_one(p[g == 1], y[g == 1])
+    data.frame(resultado = r, pend0 = s1$pend, pend1 = s2$pend, citl0 = s1$citl, citl1 = s2$citl,
+               lr = lr, p = pchisq(lr, 2, lower.tail = FALSE))
+  }))
+  lr_tab$p_holm <- c(p.adjust(lr_tab$p[lr_tab$resultado != "Todos"], "holm"), lr_tab$p[lr_tab$resultado == "Todos"])
+
+  # --- 4. Error de calibración (ECE) y su referencia por azar, por operador y periodo ---
+  p_list <- list()
+  ece_per <- bind_rows(lapply(ops_cmp, function(op) bind_rows(lapply(c("Sin VAR", "Con VAR"), function(g) {
+    P <- PR[[met_p]][[op]]; ii <- intersect(if (g == "Sin VAR") i0 else i1, which(!is.na(P[, 1])))
+    z <- sapply(resultados, function(r) ece_nula(P[ii, r], Y[ii, r], k_t, B_sim))
+    p_list[[paste(op, g)]] <<- data.frame(operador = op, periodo = g, resultado = resultados, p = z["p", ])
+    data.frame(operador = op, periodo = g, ece = mean(z["obs", ]), ece_esp = mean(z["esp", ]))
+  })))) %>%
+    pivot_wider(names_from = periodo, values_from = c(ece, ece_esp)) %>%
+    mutate(d_ece = `ece_Con VAR` - `ece_Sin VAR`)
+
+  # --- 5. Cambio del Brier por operador (bootstrap por bloques, Holm) ---
+  dbr <- bind_rows(lapply(ops_cmp, function(op) {
+    P <- PR[[met_p]][[op]]; ok <- which(!is.na(P[, 1]))
+    bi <- rep(NA_real_, nrow(P)); bi[ok] <- brier_i(P[ok, , drop = FALSE], Y[ok, , drop = FALSE])
+    st <- function(a, b) mean(bi[b]) - mean(bi[a])
+    bt <- boot_two(st, intersect(i0, ok), intersect(i1, ok), B_boot)
+    data.frame(operador = op, b0 = mean(bi[intersect(i0, ok)]), b1 = mean(bi[intersect(i1, ok)]),
+               dif = bt$est, inf = bt$inf, sup = bt$sup, p = bt$p)
+  })) %>% mutate(p_holm = p.adjust(p, "holm"))
+
+  # --- 6. Descomposición de Murphy por periodo: ¿el Brier empeoró por calibración o por dificultad? ---
+  mur_per <- bind_rows(lapply(c("Sin VAR", "Con VAR"), function(g) {
+    ii <- if (g == "Sin VAR") i0 else i1
+    z <- murphy(Pm[ii, , drop = FALSE], Y[ii, , drop = FALSE], k_t)
+    data.frame(periodo = lab_per[[g]], brier = mean(brier_i(Pm[ii, , drop = FALSE], Y[ii, , drop = FALSE])),
+               rel = z[["rel"]], rel_esp = z[["rel_esp"]], res = z[["res"]], unc = z[["unc"]])
+  }))
+
+  # --- 7. Adaptación dentro de la temporada: primera vs. segunda mitad (por fecha) ---
+  meta$mitad <- ave(as.numeric(meta$Fecha_dt), meta$temporada, FUN = function(x) ifelse(x <= median(x), 1, 2))
+  meta$tramo_t <- paste0(meta$temporada, ifelse(meta$mitad == 1, " · 1.ª mitad", " · 2.ª mitad"))
+  orden_tramos <- unlist(lapply(temps, function(s) paste0(s, c(" · 1.ª mitad", " · 2.ª mitad"))))
+  mitad_tab <- bind_rows(lapply(resultados, function(r) {
+    data.frame(tramo = meta$tramo_t, temporada = meta$temporada, p = Pm[, r], y = Y[, r]) %>%
+      filter(is.finite(p)) %>% group_by(tramo, temporada) %>%
+      summarise(n = n(), x = sum(y), pred = mean(p), obs = mean(y)) %>% ungroup() %>% mutate(resultado = r)
+  }))
+  w_m <- wilson(mitad_tab$x, mitad_tab$n)
+  mitad_tab <- mitad_tab %>% mutate(dev = (obs - pred) * 100, inf = (w_m$inf - pred) * 100, sup = (w_m$sup - pred) * 100,
+                                    tramo = factor(tramo, levels = orden_tramos),
+                                    resultado = factor(resultado, levels = resultados),
+                                    periodo = factor(ifelse(temporada >= tv, lab_per[["Con VAR"]], lab_per[["Sin VAR"]]), levels = unname(lab_per)))
+  pos_var <- which(orden_tramos == paste0(tv, " · 1.ª mitad")) - 0.5
+
+  # --- 8. Margen por periodo: ¿subieron las casas su margen ante la incertidumbre? ---
+  marg_per <- data.frame(operador = rep(colnames(marg_mat), each = nrow(marg_mat)),
+                         periodo = rep(periodo, ncol(marg_mat)), m = as.vector(marg_mat) * 100) %>%
+    filter(!is.na(m), operador %in% casas) %>% group_by(operador, periodo) %>% summarise(m = mean(m)) %>% ungroup() %>%
+    pivot_wider(names_from = periodo, values_from = m) %>% mutate(dm = `Con VAR` - `Sin VAR`)
+  dm_prom <- mean(marg_per$dm)
+
+  # --- 9. Textos automáticos ---
+  d_max <- did_tab[which.max(abs(did_tab$did)), ]
+  n_did_sig <- sum(did_tab$p_holm < 0.05)
+  lr_res <- lr_tab %>% filter(resultado != "Todos"); n_lr_sig <- sum(lr_res$p_holm < 0.05)
+  n_dbr_sig <- sum(dbr$p_holm < 0.05)
+  br_c <- dbr %>% filter(operador == op_cons)
+  mur0 <- mur_per[1, ]; mur1 <- mur_per[2, ]
+  dm_obs <- mitad_tab %>% filter(resultado == d_max$resultado)
+
+  txt_var_did <- paste0(
+    "El mayor desajuste se dio en el resultado **", tolower(d_max$resultado), "**: su frecuencia observada pasó de ",
+    f1(d_max$obs0 * 100), "% a ", f1(d_max$obs1 * 100), "% (", sprintf("%+.1f", d_max$dobs * 100), " p.p.), mientras que la probabilidad declarada por el mercado pasó de ",
+    f1(d_max$pred0 * 100), "% a ", f1(d_max$pred1 * 100), "% (", sprintf("%+.1f", d_max$dpred * 100), " p.p.). La diferencia entre ambos cambios es de ",
+    sprintf("%+.1f", d_max$did * 100), " p.p. (IC 95% por bloques: ", sprintf("%+.1f", d_max$inf * 100), " a ", sprintf("%+.1f", d_max$sup * 100),
+    " p.p.; p ajustado por Holm = ", fp(d_max$p_holm), ").")
+
+  txt_var_brier <- paste0(
+    "El Brier del mercado promedio pasó de ", f4(br_c$b0), " a ", f4(br_c$b1), " (", sprintf("%+.1f", br_c$dif * 1000), " milésimas; IC 95%: ",
+    sprintf("%+.1f", br_c$inf * 1000), " a ", sprintf("%+.1f", br_c$sup * 1000), "). La descomposición de Murphy separa las causas: la incertidumbre del fenómeno pasó de ",
+    f4(mur0$unc), " a ", f4(mur1$unc), " y la resolución de ", f4(mur0$res), " a ", f4(mur1$res), ", mientras que el componente de mala calibración (fiabilidad) pasó de ",
+    f4(mur0$rel), " a ", f4(mur1$rel), ", frente a ", f4(mur0$rel_esp), " y ", f4(mur1$rel_esp), " esperados solo por azar.")
+
+  fs1 <- function(x) { x <- round(x, 1); x[x == 0] <- 0; sprintf("%+.1f", x) }   # signo explícito, sin "-0.0"
+  todos_lr <- lr_tab %>% filter(resultado == "Todos")
+  did_ci_excl <- did_tab %>% filter(inf > 0 | sup < 0)          # IC que excluye 0 (sin ajuste)
+  lr_sig_res  <- lr_res %>% filter(p_holm < 0.05)
+
+  nivel_var <- if (n_did_sig > 0) "fuerte" else if (n_lr_sig > 0 || nrow(did_ci_excl) > 0) "indicio" else "ninguno"
+  txt_var_veredicto <- switch(nivel_var,
+    fuerte = paste0("Hay **evidencia de que los precios no acompañaron el cambio de la temporada con VAR**: ", n_did_sig, " de ", nrow(did_tab),
+                    " diferencias en diferencias son significativas tras el ajuste de Holm. El mayor desajuste fue en ", tolower(d_max$resultado),
+                    " (", fs1(d_max$did * 100), " p.p.; IC 95%: ", fs1(d_max$inf * 100), " a ", fs1(d_max$sup * 100), ")."),
+    indicio = paste0("**No hay evidencia de un desajuste general, pero sí un indicio localizado en el ", tolower(d_max$resultado), ".** ",
+                     "En conjunto, la calibración no cambió (prueba que agrega los tres resultados: p = ", fp(todos_lr$p), ") y ningún operador empeoró su Brier de forma significativa. ",
+                     "En el ", tolower(d_max$resultado), ", en cambio, la frecuencia observada cambió ", fs1(d_max$dobs * 100), " p.p. y la probabilidad declarada solo ",
+                     fs1(d_max$dpred * 100), " p.p.: un desajuste de ", fs1(d_max$did * 100), " p.p. (IC 95%: ", fs1(d_max$inf * 100), " a ", fs1(d_max$sup * 100), "). ",
+                     ifelse(nrow(lr_sig_res) > 0, paste0("La prueba de cambio en la calibración del ", paste(tolower(lr_sig_res$resultado), collapse = " y "),
+                            " es significativa tras Holm (p = ", paste(fp(lr_sig_res$p_holm), collapse = ", "), "), "), ""),
+                     "pero la diferencia en diferencias no supera el ajuste por comparaciones múltiples (p = ", fp(d_max$p_holm), "). ",
+                     "La lectura prudente es que las casas no anticiparon del todo el aumento de ese resultado en la primera temporada con VAR, con un desajuste de magnitud moderada que esta muestra no permite confirmar."),
+    ninguno = paste0("Con esta muestra **no hay evidencia de que las casas estuvieran mal preparadas** para la temporada con VAR: ninguna diferencia en diferencias ni prueba de cambio en la calibración es significativa, ",
+                     "y el mayor desajuste (", tolower(d_max$resultado), ", ", fs1(d_max$did * 100), " p.p.; IC 95%: ", fs1(d_max$inf * 100), " a ", fs1(d_max$sup * 100),
+                     ") es compatible con el azar. Eso no demuestra que estuvieran preparadas: dos temporadas no alcanzan a descartar un desajuste de varios puntos."))
+
+  # Cuánto del cambio del Brier viene de cada componente de Murphy
+  d_rel <- mur1$rel - mur0$rel; d_res <- mur1$res - mur0$res; d_unc <- mur1$unc - mur0$unc
+  d_tot <- d_rel - d_res + d_unc
+  sh_rel <- d_rel / d_tot; sh_dif <- (d_unc - d_res) / d_tot
+  razon_rel <- mur1$rel / mur1$rel_esp
+  txt_var_murphy <- paste0(
+    ifelse(razon_rel < 1.25, "Con VAR la fiabilidad es del orden de lo esperado por azar",
+           ifelse(razon_rel < 2, paste0("Con VAR la fiabilidad es ", f1(razon_rel), " veces lo esperado por azar, algo por encima pero sin holgura"),
+                  paste0("Con VAR la fiabilidad es ", f1(razon_rel), " veces lo esperado por azar"))),
+    ". Del aumento del Brier, aproximadamente un ", round(sh_dif * 100), "% se explica por partidos más difíciles de pronosticar (más incertidumbre y menos resolución) y un ",
+    round(sh_rel * 100), "% por peor calibración. ",
+    ifelse(sh_dif > 0.5, "El empeoramiento del pronóstico se debe sobre todo a la dificultad de la temporada, no a probabilidades mal calibradas.",
+           "Una parte importante del empeoramiento se debe a peor calibración."))
+  ece_ops_n   <- nrow(ece_per)
+  n_pre_ok    <- sum(ece_per$`ece_Sin VAR` <= ece_per$`ece_esp_Sin VAR`)
+  n_post_sob  <- sum(ece_per$`ece_Con VAR` >  ece_per$`ece_esp_Con VAR`)
+  n_suben     <- sum(ece_per$d_ece > 0)
+  razon_post  <- mean(ece_per$`ece_Con VAR` / ece_per$`ece_esp_Con VAR`)
+  # Prueba por simulación: ¿el ECE con VAR de cada operador × resultado supera al del azar? (Holm sobre la familia)
+  ece_p_post  <- bind_rows(p_list) %>% filter(periodo == "Con VAR") %>% mutate(p_holm = p.adjust(p, "holm"))
+  n_ece_sig   <- sum(ece_p_post$p_holm < 0.05)
+  txt_var_ops <- paste0(
+    "Sin VAR, ", n_pre_ok, " de ", ece_ops_n, " operadores tenían un error de calibración igual o menor al que produciría el puro azar. ",
+    "Con VAR, ", n_post_sob, " de ", ece_ops_n, " lo superan, en promedio ", f1(razon_post), " veces. ",
+    ifelse(n_suben == ece_ops_n,
+           "Todos los operadores se mueven en la misma dirección y en magnitudes parecidas: el desajuste fue del mercado en su conjunto, no de una casa en particular, lo que es coherente con que todas fijan precios muy similares. ",
+           paste0(n_suben, " de ", ece_ops_n, " operadores empeoran. ")),
+    "Al probarlo formalmente (simulación de un mercado perfectamente calibrado con ", length(i1), " partidos, ajuste de Holm), ", n_ece_sig, " de ", nrow(ece_p_post),
+    " combinaciones operador × resultado con VAR tienen un error significativamente mayor que el del azar",
+    ifelse(n_ece_sig == 0, ": el gráfico muestra una tendencia común, no una diferencia demostrable.", "."))
+  txt_var_margen <- paste0("En promedio, las casas ", ifelse(dm_prom >= 0, "subieron", "bajaron"), " su margen ", f2(abs(dm_prom)),
+                           " p.p. en la temporada con VAR (", paste(sprintf("%s %+.2f", marg_per$operador, marg_per$dm), collapse = "; "), ").")
+  txt_var_mitad <- {
+    m1 <- dm_obs %>% filter(tramo == paste0(tv, " · 1.ª mitad")); m2 <- dm_obs %>% filter(tramo == paste0(tv, " · 2.ª mitad"))
+    paste0("Por mitades de temporada, la desviación en ", tolower(d_max$resultado), " fue de ", fs1(m1$dev), " p.p. en la primera mitad de ", tv,
+           " y de ", fs1(m2$dev), " p.p. en la segunda. ",
+           ifelse(abs(m2$dev) < abs(m1$dev), "La reducción sería consistente con un ajuste progresivo del mercado, ",
+                  "No se observa una reducción en la segunda mitad, "),
+           "aunque con unos ", round(mean(dm_obs$n)), " partidos por mitad los intervalos son de ±", f1(mean(dm_obs$sup - dm_obs$inf) / 2), " p.p. y no permiten afirmarlo.")
+  }
+}
+```
+
+```{r textos, include=FALSE}
+temps_txt <- paste(sort(unique(meta$temporada)), collapse = " y ")
+ligas_txt <- paste(unique(meta$Liga), collapse = ", ")
+ff <- function(d) format(d, "%d/%m/%Y")
+
+ece_c <- cal_main %>% filter(operador == op_cons)
+sim_c <- sim_tab %>% filter(operador == op_cons)
+txt_ece <- paste0(paste0(ece_c$resultado, " ", f1(ece_c$ece_pp), " p.p."), collapse = ", ")
+txt_ece_esp <- paste0(paste0(sim_c$resultado, " ", f1(sim_c$ece_esp), " p.p."), collapse = ", ")
+
+txt_cal <- paste0(
+  "En el mercado promedio (", op_cons, "), el error esperado de calibración (ECE) por resultado es: ", txt_ece,
+  " Si el mercado estuviera perfectamente calibrado y solo actuara el azar muestral, se esperaría: ", txt_ece_esp,
+  " La mayor desviación puntual en un intervalo es de ", f1(max_dev_cons), " p.p., con un mínimo detectable por intervalo de aproximadamente ±",
+  f1(mde_bin), " p.p. dado el tamaño de muestra.")
+
+txt_hl <- paste0(
+  "La prueba de Hosmer-Lemeshow (k = ", k_bins, ", Holm sobre ", n_hl_tot, " combinaciones operador × resultado) rechaza la calibración en ",
+  n_hl_sig, " de ", n_hl_tot, " casos (", n_hl_sig_raw, " sin ajuste). La prueba basada en simulación del ECE rechaza en ",
+  n_sim_sig, " de ", nrow(sim_tab), " casos tras el ajuste de Holm.")
+
+txt_slope <- paste0(
+  "La pendiente de recalibración del mercado promedio, agregando los tres resultados, es ", f2(sl_todos$pend),
+  " (IC 95% por bloques de jornada: ", f2(sl_todos$inf_boot), " a ", f2(sl_todos$sup_boot), "). ",
+  ifelse(sl_todos$inf_boot <= 1 & sl_todos$sup_boot >= 1,
+         "El intervalo contiene 1: no hay evidencia de que las probabilidades sean sistemáticamente más o menos extremas que la realidad.",
+         ifelse(sl_todos$pend > 1,
+                "Es significativamente mayor que 1: los eventos improbables ocurren menos y los probables más de lo que el mercado declara (dirección del sesgo favorito-longshot).",
+                "Es significativamente menor que 1: el mercado resulta más extremo que la realidad (dirección contraria al sesgo favorito-longshot).")))
+
+txt_brier <- paste0(
+  "El Brier multiclase de ", ref, " es ", f4(b_ref), ", frente a ", f4(brier_hist), " de la línea base histórica y ", f4(brier_uni),
+  " de la uniforme; la reducción relativa del error frente a la histórica es de ", f1((1 - b_ref / brier_hist) * 100), "%.")
+
+txt_casas <- paste0(
+  "Entre las ", length(casas), " casas, el Brier va de ", f4(min(b_casas)), " a ", f4(max(b_casas)),
+  " (rango de ", f1(rango_b * 1000), " milésimas, equivalente al ", f1(razon_rango * 100),
+  "% de la mejora de ", ref, " sobre la línea base histórica). La prueba de Friedman, que respeta que las casas fijan precio sobre los mismos partidos, da p = ",
+  fp(fr$p.value), ". Tras Holm, ", n_comp_sig, " de ", nrow(comp), " comparaciones pareadas contra ", ref, " son significativas.")
+
+txt_sens <- paste0(
+  "Al cambiar de método de remoción del margen, el Brier de cualquier operador varía como máximo ", f1(dif_brier_met * 1000),
+  " milésimas, el orden de las casas casi no cambia (Spearman ", txt_rho,
+  ") y la decisión de la prueba de Hosmer-Lemeshow cambia en ", n_dec_dif, " de ", nrow(dec), " combinaciones. La probabilidad individual de un partido se mueve hasta ",
+  f1(max_dif_prob), " p.p. entre métodos.")
+
+txt_cierre <- if (tiene_cierre) {
+  b <- oc_tab[oc_tab$metrica == "Brier", ]
+  paste0("Sobre ", n_oc, " partidos con ambas cuotas, el Brier de Pinnacle baja de ", f4(b$apertura), " (apertura) a ", f4(b$cierre),
+         " (cierre); diferencia ", f1(b$dif * 1000), " milésimas (IC 95% por bloques: ", f1(b$inf * 1000), " a ", f1(b$sup * 1000), "; p = ", fp(b$p), ").")
+} else "No hay cuotas de cierre en la base."
+
+txt_veredicto <- ifelse(n_hl_sig == 0 & n_sim_sig == 0,
+  "no se detecta, con esta muestra, ninguna desviación de calibración estadísticamente distinguible del azar una vez controladas las comparaciones múltiples",
+  "se detectan desviaciones de calibración en algunas combinaciones operador × resultado tras el ajuste por multiplicidad; su relevancia debe juzgarse por la magnitud en p.p. reportada en las tablas")
+txt_dif_casas <- ifelse(razon_rango < 0.25,
+  "Las diferencias de calidad entre casas son pequeñas frente a la mejora que cualquiera logra sobre la línea base; lo que más las separa es el margen, no la calidad de sus probabilidades.",
+  "Las diferencias de calidad entre casas son apreciables frente a la mejora sobre la línea base.")
+txt_rel_casas <- ifelse(razon_rango < 0.25, "una fracción pequeña", "una fracción apreciable")
+
+txt_pinn <- if (pinnacle_afectado) {
+  "La base incluye partidos posteriores al 23/07/2025: las cuotas de Pinnacle de esas fechas se excluyeron del análisis por el problema de actualización declarado por Football-Data."
+} else {
+  paste0("Todos los partidos son anteriores al 23/07/2025 (último partido: ", ff(max(meta$Fecha_dt)),
+         "), por lo que la advertencia de Football-Data sobre las cuotas de Pinnacle no aplica y no fue necesario excluir observaciones.")
+}
+```
+
+```{r textos_simples, include=FALSE}
+# ==== Conclusiones e implicaciones en lenguaje sencillo (todo calculado; la redacción cambia según el resultado) ====
+plural_res <- c(Local = "victorias locales", Empate = "empates", Visitante = "victorias visitantes")
+pct <- function(x) paste0(round(x * 100), " %")
+
+# Retorno esperado de cada casa con el método principal (si sus probabilidades fueran exactas)
+ev_casa <- vapply(casas, function(op) mean(PR[[met_p]][[op]] * ods[[op]] - 1, na.rm = TRUE) * 100, numeric(1))
+
+# 1. ¿Aciertan las cuotas?
+ej <- cal_ref %>% filter(resultado == "Local") %>% slice(which.min(abs(p_med - 0.5)))
+ece_c_med <- mean(ece_c$ece_pp); ece_c_esp <- mean(sim_c$ece_esp)
+s_cal <- paste0(
+  ifelse(n_hl_sig == 0 & n_sim_sig == 0, "**Sí, las cuotas aciertan.** ", "**En general sí, con algunas excepciones.** "),
+  "En los ", ej$n, " partidos en que las cuotas le daban al local alrededor de un ", pct(ej$p_med), " de ganar, el local ganó el ", pct(ej$f_obs), ". ",
+  "En promedio, las cuotas se alejaron ", f1(ece_c_med), " puntos de lo que pasó en la cancha, ",
+  ifelse(ece_c_med <= ece_c_esp * 1.15, "prácticamente lo mismo", "algo más"), " que los ", f1(ece_c_esp),
+  " puntos que se alejaría una casa perfecta solo por la suerte propia del fútbol.")
+
+# 2. El margen
+s_marg <- paste0(
+  "**La casa gana por el precio, no por adivinar.** Si se suman las probabilidades de las tres cuotas de un partido, dan en promedio ",
+  f1(100 + m_prom), " % y no 100 %. Esos ", f1(m_prom), " puntos de más son la ganancia de la casa. ",
+  op_m_min, " cobra ", f1(m_min), " puntos y ", op_m_max, " ", f1(m_max), ". ",
+  "Aunque las cuotas fueran exactas, de cada 100 pesos apostados volverían en promedio unos ", round(100 + ev_main), ".")
+
+# 3. Las casas entre sí
+fr_cambia <- nrow(fr_sig) > 0 && nrow(fr_ns) > 0
+s_casas <- paste0(
+  "**Las casas saben más que alguien sin información, y todas saben casi lo mismo.** Comparadas con alguien que siempre apostara a lo que pasa en promedio (local ",
+  pct(frec_hist[1]), ", empate ", pct(frec_hist[2]), ", visitante ", pct(frec_hist[3]), "), las cuotas se equivocan un ",
+  f1((1 - b_ref / brier_hist) * 100), " % menos. ",
+  ifelse(razon_rango < 0.25,
+         paste0("Entre una casa y otra la diferencia es mínima: la distancia entre la que más acierta y la que menos equivale al ", f1(razon_rango * 100),
+                " % de esa ventaja. ",
+                ifelse(fr_cambia, "Con una de las tres formas de quitar el margen, esa diferencia mínima se vuelve detectable, pero sigue al margen de cada casa, no a su conocimiento (ver Sensibilidad). ", ""),
+                "Lo que de verdad separa a las casas es cuánto cobran, no cuánto saben."),
+         paste0("Entre casas hay diferencias apreciables: la distancia entre la mejor y la peor equivale al ", f1(razon_rango * 100), " % de esa ventaja.")))
+
+# 4. Favoritos y no favoritos
+s_flb <- ifelse(sl_todos$inf_boot <= 1 & sl_todos$sup_boot >= 1,
+  "**Las cuotas no favorecen ni a los favoritos ni a los débiles.** Los equipos con cuota alta ganaron más o menos lo que su cuota decía, igual que los favoritos.",
+  ifelse(sl_todos$pend > 1,
+    "**Las cuotas de los equipos débiles pagan menos de lo que deberían:** ganan menos de lo que su cuota indica, y los favoritos más.",
+    "**Las cuotas exageran:** los favoritos ganan menos de lo que indican y las sorpresas pasan más."))
+
+# 5. Apertura vs. cierre
+s_cierre <- if (tiene_cierre) {
+  bb <- oc_tab[oc_tab$metrica == "Brier", ]
+  if (bb$dif > 0) paste0("**La cuota se afina justo antes del partido.** La cuota de cierre de Pinnacle se equivoca un ", f1(bb$dif / bb$apertura * 100),
+                         " % menos que la de apertura, porque ya incluye alineaciones, lesiones y cómo apostó la gente. ",
+                         ifelse(bb$p < 0.05, "La mejora es pequeña, pero no es suerte.", "La mejora es pequeña y podría ser suerte."))
+  else "**La cuota de cierre no acertó más que la de apertura** en estos partidos."
+} else ""
+
+# 6. VAR
+aprendio <- FALSE
+s_var <- if (hay_var) {
+  rr <- d_max$resultado; nn <- plural_res[[rr]]
+  x0 <- sum(Y[i0, rr]); x1 <- sum(Y[i1, rr])
+  m1 <- mitad_tab %>% filter(resultado == rr, tramo == paste0(tv, " · 1.ª mitad"))
+  m2 <- mitad_tab %>% filter(resultado == rr, tramo == paste0(tv, " · 2.ª mitad"))
+  aprendio <<- abs(m2$dev) < abs(m1$dev)
+  paste0(
+    "**¿Estaban preparadas para el VAR? ", switch(nivel_var, fuerte = "No del todo.", indicio = "Casi: les faltó prever los ", ninguno = "No hay señales de lo contrario."),
+    ifelse(nivel_var == "indicio", paste0(nn, ".** "), "** "),
+    "En ", tv, ", la primera temporada con VAR, hubo ", x1, " ", nn, " en ", length(i1), " partidos, frente a ", x0, " la temporada anterior (",
+    ifelse(x1 > x0, "+", ""), x1 - x0, "). Las cuotas apenas lo reflejaron: la probabilidad de ese resultado pasó de ", pct(d_max$pred0), " a ", pct(d_max$pred1), ". ",
+    ifelse(abs(m2$dev) < abs(m1$dev),
+           paste0("El desfase fue de ", fs1(m1$dev), " puntos en la primera mitad de la temporada y casi desapareció en la segunda (", fs1(m2$dev),
+                  "): las casas tardaron media temporada en ajustar. "),
+           paste0("El desfase no se corrigió en la segunda mitad de la temporada (", fs1(m1$dev), " y ", fs1(m2$dev), " puntos). ")),
+    "En lo demás (victorias de local y visitante, calidad general de las cuotas), no hubo cambios mayores que los que da la suerte. ",
+    "Con solo dos temporadas no se puede asegurar que la causa haya sido el VAR: también cambiaron plantillas, técnicos y calendario.")
+} else ""
+
+# ==== Implicaciones para el mundo de las apuestas ====
+i_precio <- paste0(
+  "**La ventaja de la casa está en el precio.** Dos casas con cuotas igual de acertadas pueden cobrar muy distinto: ", op_m_max, " cobra ",
+  f1(m_max / m_min), " veces lo que cobra ", op_m_min, ". Para quien apuesta, eso es el costo de cada apuesta. ",
+  "Incluso en la casa más barata (", op_m_min, "), de cada 100 pesos apostados volverían en promedio unos ", round(100 + ev_casa[[op_m_min]]),
+  "; en la más cara (", op_m_max, "), unos ", round(100 + ev_casa[[op_m_max]]), ". Con cuotas que aciertan, ese costo no se puede evitar a la larga.")
+i_regalo <- ifelse(n_hl_sig == 0 & n_sim_sig == 0 & sl_todos$inf_boot <= 1 & sl_todos$sup_boot >= 1,
+  "**En estos datos no hay cuotas que estén sistemáticamente mal puestas.** Ni los favoritos, ni los equipos débiles, ni ningún rango de probabilidad aparecen con cuotas que se alejen de la realidad más de lo que explica la suerte. Lo que una cuota dice es, en promedio, lo que pasa.",
+  "**Aparecen algunos rangos de probabilidad con desviaciones** mayores que las de la suerte; aun así, una desviación del pasado no garantiza nada sobre el futuro y el margen sigue incorporado en cada cuota.")
+i_copia <- paste0(
+  "**Las casas se mueven en bloque.** Sus cuotas aciertan casi exactamente igual",
+  ifelse(hay_var && n_suben == ece_ops_n,
+         ifelse(n_ece_sig == 0, " y, cuando llegó el VAR, su error subió en todas a la vez y en magnitud parecida (aunque ese aumento no supera lo que puede dar la suerte)",
+                " y, cuando llegó el VAR, todas se desajustaron a la vez y en magnitud parecida"), ""),
+  ". Eso es coherente con un mercado en el que las casas se observan entre sí y ajustan sus precios a una referencia común: competir por cuotas \"más acertadas\" casi no ocurre; se compite por cuánto se cobra.")
+i_info <- if (tiene_cierre && oc_tab$dif[oc_tab$metrica == "Brier"] > 0)
+  "**La información mueve el precio.** Las cuotas mejoran a medida que se acerca el partido: alineaciones, lesiones y el propio flujo de apuestas se incorporan al precio. La cuota que se publica días antes es la menos informada." else ""
+i_reglas <- if (hay_var) {
+  if (nivel_var == "ninguno") "**Un cambio de reglas no desajustó las cuotas.** Incluso con la llegada del VAR, las cuotas siguieron acertando: las casas incorporaron el cambio sin un desfase medible."
+  else paste0("**Un cambio de reglas abre un periodo de ajuste.** Con la llegada del VAR, las cuotas no reflejaron de inmediato el cambio en los ",
+              plural_res[[d_max$resultado]], ifelse(exists("aprendio") && aprendio, " y lo corrigieron durante la temporada", ""),
+              ". Las casas no pueden anticipar lo que todavía no han visto: aprenden de los resultados. Cambios de reglamento, de formato o de calendario son momentos en que los precios pueden quedarse atrás por un tiempo.")
+} else ""
+s_var_murphy <- if (hay_var) paste0("Las casas acertaron menos en ", tv, ", pero sobre todo porque fue una temporada con más sorpresas (",
+  round(sh_dif * 100), " % del aumento del error), no porque pusieran peor las cuotas (", round(sh_rel * 100), " %).") else ""
+i_fuera <- "**Más allá de las apuestas.** Revisar si \"cuando se dice 40 %, pasa el 40 %\" sirve para evaluar cualquier pronóstico: la probabilidad de lluvia, de que una máquina falle este mes o de que un cliente no pague un crédito."
+```
+
+# Conclusiones principales
+
+::: {.conclusion}
+`r s_cal`
+
+`r s_marg`
+
+`r s_casas`
+
+`r s_flb`
+
+`r s_cierre`
+
+`r s_var`
+:::
+
+# ¿Qué significa esto para el mundo de las apuestas?
+
+::: {.conclusion}
+`r i_precio`
+
+`r i_regalo`
+
+`r i_copia`
+
+`r i_info`
+
+`r i_reglas`
+
+`r i_fuera`
+:::
+
+> **Cómo leer este reporte.** Es una revisión de partidos que ya se jugaron, hecha con fines académicos. Que las cuotas acierten no significa que haya una forma de ganarle a la casa: justamente porque aciertan, el margen hace que apostar de forma sostenida termine en pérdida. Nada de este reporte es una recomendación. Las apuestas en Colombia están reguladas por Coljuegos y solo son legales para mayores de 18 años; la ludopatía es una condición de salud tratable, y la EPS puede orientar una consulta.
+
+# Resumen técnico
+
+**Alcance.** `r n_part` partidos de `r ligas_txt`, temporadas `r temps_txt` (`r ff(min(meta$Fecha_dt))` a `r ff(max(meta$Fecha_dt))`), con cuotas 1X2 de `r length(casas)` casas pre-partido, el promedio de esas `r length(casas)` casas (mercado promedio) y la cuota de cierre de Pinnacle. El análisis es **retrospectivo, con fines exclusivamente académicos y metodológicos**.
+
+**Margen.** El margen medio de las casas es de **`r f1(m_prom)` p.p.** (de `r f1(m_min)` en `r op_m_min` a `r f1(m_max)` en `r op_m_max`). `r txt_ev` El margen implica un valor esperado negativo para cualquier participante.
+
+**Calibración.** `r txt_cal` `r txt_hl`
+
+**Sesgo favorito-longshot.** `r txt_slope`
+
+**Puntuación y comparación entre casas.** `r txt_brier` `r txt_casas`
+
+**Robustez.** `r txt_sens`
+
+**Apertura vs. cierre.** `r txt_cierre`
+
+**Objetivo secundario: ¿estaban preparadas las casas para el VAR?** `r if (hay_var) txt_var_veredicto else "No evaluable con las temporadas de la base."`
+
+> **Lectura prudente.** Un resultado de calibración es un hallazgo técnico sobre precios y probabilidades. No indica oportunidades ni constituye recomendación de ningún tipo.
+
+# Encuadre y datos
+
+## Qué es y qué no es este reporte
+
+Este reporte audita pronósticos probabilísticos: contrasta la probabilidad que las cuotas declaran (una vez removido el margen) con la frecuencia con que los resultados ocurrieron. **No es una estrategia, un sistema de selección de partidos ni una recomendación.** Una desviación medida sobre datos históricos no sobrevive necesariamente al margen ni al futuro. Un mercado perfectamente calibrado es aquel en el que no existe forma de obtener ganancia esperada positiva.
+
+## Preguntas
+
+- **Principal:** ¿están bien calibradas las probabilidades implícitas en las cuotas, una vez removido el margen?
+- **Secundaria:** `r if (hay_var) paste0("¿estaban preparadas las casas para la inclusión del VAR en ", tv, "? Es decir, ¿siguieron calibradas y acompañaron sus precios los cambios en la frecuencia de los resultados?") else "no aplica con las temporadas de esta base."`
+
+## Fuente y alcance
+
+- **Fuente:** Football-Data.co.uk (cuotas y resultados históricos), archivo consolidado `r basename(ruta_ok)`.
+- **Liga y temporadas:** `r ligas_txt`; `r temps_txt`.
+- **Operadores:** `r paste(casas, collapse = ", ")` (casas pre-partido, a las que se llama *apertura* en la base), más `r paste(intersect(ops_ref_esp, ops_all), collapse = " y ")`.
+- **Mercado promedio (Promedio_Apertura).** No es una casa más: es el promedio simple de las cuotas de las `r length(casas)` casas comparadas, calculado partido por partido en el script de unificación (Script 0). Representa el "precio de consenso" de las casas estudiadas. Como se construye a partir de ellas, no se incluye en la prueba de Friedman entre casas.
+- **Pinnacle posterior a julio de 2025.** `r txt_pinn`
+- **Muestra común.** Las comparaciones entre operadores usan los `r n_com` partidos con cuotas válidas en todos los operadores pre-partido; el cierre de Pinnacle se analiza aparte sobre sus propios partidos pareados.
+
+## Validaciones
+
+```{r tab-validaciones}
+kable(validaciones, align = "lcl")
+```
+
+### Datos faltantes
+
+```{r tab-faltantes, eval = nrow(falt_df) > 0}
+kable(falt_df, align = "lcclll", caption = "Partidos con cuotas faltantes o inválidas, por operador, y su tratamiento.")
+```
+
+`r if (nrow(falt_df) == 0) "No hay cuotas faltantes ni inválidas en ningún operador." else paste0("Hay ", nrow(falt_df), " registro(s) operador × partido sin cuotas válidas. ", paste(sprintf("En %s (%s), %s no tiene cuotas de %s; %s.", falt_df$Partido, falt_df$Fecha, falt_df$Operador, tolower(falt_df[["Cuotas faltantes o inválidas"]]), tolower(falt_df$Tratamiento)), collapse = " "), " El faltante proviene de la fuente (Football-Data no publicó esas cuotas) y no se imputa.", if (any(falt_df$Operador == "Pinnacle_Cierre")) paste0(" Por eso la comparación apertura-cierre usa ", n_oc, " partidos y no ", n_part, ".") else "")`
+
+### Márgenes atípicos
+
+```{r tab-atipicos, eval = nrow(atip_df) > 0}
+kable(atip_df, align = "lccccc", caption = "Márgenes mayores de 10 p.p.: posible error de captura. Se conservan en el análisis.")
+```
+
+`r if (nrow(atip) == 0) "Ningún operador presenta márgenes mayores de 10 p.p." else paste0(paste(sprintf("En %s (%s), %s presenta un margen de %s p.p. porque su cuota de %s. El partido terminó en %s.", atip_df$Partido, atip_df$Fecha, atip_df$Operador, f1(atip_df[["Margen (p.p.)"]]), sub(":", " es", tolower(atip_df[["Cuota que se aparta del consenso"]])), tolower(atip_df[["Resultado del partido"]])), collapse = " "), " Una cuota tan alejada del consenso de los demás operadores es, con alta probabilidad, un error de captura en la fuente. No se corrige, porque no puede verificarse el valor real, y se conserva para no alterar la base; excluirlo cambia el Brier de cualquier operador en a lo sumo ", f4(delta_atip), ", sin efecto sobre ninguna conclusión.")`
+
+## Inventario de cobertura
+
+Partidos con cuotas válidas sobre el total, por operador, liga y temporada.
+
+```{r tab-cobertura}
+kable(cob_wide)
+```
+
+# De cuotas a probabilidades: el margen
+
+::: {.metodo}
+**En palabras simples.** Una cuota de 2.50 quiere decir que la casa cree que ese resultado pasa 1 de cada 2.5 veces, es decir, un 40 %. Si se hace esa cuenta con las tres cuotas de un partido (local, empate y visitante), la suma no da 100 %, sino algo más, por ejemplo 105 %. Esos 5 puntos de más son la ganancia de la casa: el **margen**.
+
+**Para qué lo usamos.** Para saber cuánto cobra cada casa, y para quitar ese margen antes de comparar las cuotas con lo que pasó en la cancha. Si no se quita, todas las casas parecerían exagerar las probabilidades. Como no sabemos cómo reparte la casa esos puntos de más entre local, empate y visitante, probamos tres formas de quitarlos (tabla siguiente).
+:::
+
+Para una cuota decimal $o_i$, la probabilidad bruta es $\pi_i = 1/o_i$. En el mercado 1X2, $\sum_i \pi_i > 1$ y el exceso $m = \sum_i \pi_i - 1$ es el margen del operador. **Ninguna comparación con frecuencias se hace sobre probabilidades brutas**: se remueve el margen con tres métodos que encarnan supuestos distintos sobre cómo se reparte entre los resultados.
+
+| Método | Supuesto implícito | Fórmula |
+|:--|:--|:--|
+| Multiplicativo | El margen es proporcional a la probabilidad de cada resultado | $p_i = \pi_i / \sum_j \pi_j$ |
+| Potencia (odds-ratio) | Relación no lineal; los improbables absorben proporcionalmente más margen | $p_i = \pi_i^{c}$, con $c>1$ tal que $\sum_i p_i = 1$ |
+| Shin | El margen protege al operador de apostadores informados y recae más sobre los improbables | $p_i = \dfrac{\sqrt{z^2 + 4(1-z)\pi_i^2/\sum_j \pi_j} - z}{2(1-z)}$, con $z$ tal que $\sum_i p_i = 1$ |
+
+Los tres métodos se recalculan aquí a partir de las cuotas originales y se contrastan con las columnas multiplicativa y de potencia de la base analítica (ver validaciones). `r if (dif_recalc[["Pot"]] > 1e-6) paste0("Las probabilidades de potencia de la base difieren del recálculo en a lo sumo ", fpp(dif_recalc[["Pot"]]), ", una diferencia sin efecto práctico que se debe a la precisión con que se resolvió la ecuación del método (tolerancia por defecto de uniroot en la base; este reporte la resuelve con mayor precisión).") else ""` El método principal de este reporte es **`r nombre_met[[met_p]]`**. La elección importa porque los métodos difieren justamente en cuánto margen asignan a los resultados improbables, y eso condiciona la lectura del sesgo favorito-longshot (sección de sensibilidad).
+
+## Distribución del margen
+
+```{r tab-margen}
+t <- tab_marg %>%
+  transmute(Operador = operador, Tipo = tipo, Partidos = n, `Media (p.p.)` = round(media, 2),
+            `D.E.` = round(de, 2), Mediana = round(p50, 2), Mínimo = round(minimo, 2), Máximo = round(maximo, 2))
+kable(t, align = "llcccccc", caption = "Margen (overround) por operador, en puntos porcentuales.")
+```
+
+```{r fig-margen, fig.cap = "Distribución del margen por operador y temporada."}
+ggplot(marg_long %>% filter(!is.na(margen)),
+       aes(x = reorder(operador, margen, median), y = margen, fill = temporada)) +
+  geom_boxplot(outlier.size = 1, alpha = 0.85) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2", name = "Temporada") +
+  labs(title = "El margen es la ventaja del operador incorporada en cada precio",
+       x = NULL, y = "Margen (p.p.)")
+```
+
+```{r tab-margen-temp}
+kable(marg_temp %>% mutate(across(where(is.numeric), ~ round(.x, 2))),
+      caption = "Margen medio (p.p.) por operador y temporada.")
+```
+
+**Implicación.** Apostar una unidad a un resultado con cuota $o_i$ y probabilidad verdadera $p_i$ produce un retorno esperado de $p_i\,o_i - 1$. `r txt_ev` Con el multiplicativo la expresión se reduce a $-m/(1+m)$ para cualquier resultado; con potencia y Shin el retorno es más negativo en los resultados improbables, porque esos métodos les cargan más margen. No depende de la suerte ni de la selección de partidos: es la estructura del precio. `r op_m_min` cobra el margen más bajo (`r f1(m_min)` p.p.) y `r op_m_max` el más alto (`r f1(m_max)` p.p.).
+
+# Metodología de evaluación
+
+- **Agrupamiento.** Intervalos de **igual frecuencia** (k = `r k_bins`, ≈ `r round(n_com / k_bins)` partidos por intervalo) en lugar de ancho fijo: con `r n_com` partidos por resultado, los intervalos de ancho fijo dejan colas con muy pocos partidos. Cada resultado (local, empate, visitante) se evalúa por separado porque sus rangos de probabilidad no se solapan. La sensibilidad a k se verifica con k = `r paste(k_set, collapse = ", ")`.
+- **Incertidumbre.** Intervalos de Wilson al 95% para cada proporción observada.
+- **Magnitud.** Toda desviación se reporta en puntos porcentuales; el valor p nunca va solo. El ECE es la desviación absoluta media ponderada por partidos.
+- **Pruebas de calibración.** Hosmer-Lemeshow (g − 2 grados de libertad); ECE contra su distribución simulada bajo calibración perfecta; y regresión logística de recalibración (pendiente y calibración global).
+- **Reglas de puntuación.** Brier multiclase, log-loss y *Ranked Probability Score*, esta última apropiada porque respeta el orden local < empate < visitante, con la descomposición de Murphy del Brier. Líneas base: uniforme e histórica (frecuencias de la muestra, ligeramente favorable a la base).
+- **Datos apareados y dependientes.** Todas las casas fijan precio sobre los mismos partidos: la comparación usa diferencias de Brier **por partido**, con prueba de Friedman, Wilcoxon pareado y *bootstrap* por bloques (`r n_clus` bloques de semana martes-lunes como proxy de jornada, `r B_boot` réplicas).
+- **Comparaciones múltiples.** Familias declaradas de antemano, con ajuste de Holm dentro de cada una: (a) Hosmer-Lemeshow, `r n_hl_tot` contrastes; (b) ECE simulado, `r nrow(sim_tab)` contrastes; (c) diferencias pareadas contra `r ref`, `r nrow(comp)` contrastes. Los resultados de pendientes y de apertura-cierre son descriptivos o confirmatorios de una sola hipótesis.
+- **Poblaciones con tasas base distintas.** Se verifica la estabilidad entre temporadas por separado y se reportan las tasas base.
+
+# Resultados
+
+## Curvas de calibración
+
+::: {.metodo}
+**En palabras simples.** Juntamos los partidos en los que las casas dieron una probabilidad parecida, por ejemplo todos aquellos en que el local tenía cerca de un 40 %, y contamos cuántos ganó de verdad. Si ganó más o menos el 40 %, la casa acertó y el punto cae sobre la línea diagonal. Cada grupo tiene el mismo número de partidos (unos `r round(n_com / k_bins)`), para que ningún punto dependa de muy pocos partidos. La barra vertical de cada punto es el margen de error: si la diagonal toca la barra, la diferencia puede ser simple suerte.
+
+**Para qué lo usamos.** Es la respuesta directa a la pregunta del proyecto: cuando la casa dice 40 %, ¿pasa de verdad el 40 % de las veces?
+:::
+
+```{r fig-calibracion, fig.height = 5, fig.cap = "Diagrama de fiabilidad del mercado promedio. Barras: IC 95% de Wilson; tamaño del punto proporcional al número de partidos del intervalo; la diagonal es la calibración perfecta."}
+lim <- cal_ref %>% group_by(resultado) %>%
+  summarise(lo = max(0, min(c(p_med, inf))), hi = min(1, max(c(p_med, sup)))) %>% ungroup()
+ggplot(cal_ref, aes(x = p_med, y = f_obs, colour = resultado)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", colour = "grey50") +
+  geom_blank(data = lim, aes(x = lo, y = lo), inherit.aes = FALSE) +
+  geom_blank(data = lim, aes(x = hi, y = hi), inherit.aes = FALSE) +
+  geom_errorbar(aes(ymin = inf, ymax = sup), width = 0, linewidth = 0.7) +
+  geom_line(linewidth = 0.5, alpha = 0.6) +
+  geom_point(aes(size = n)) +
+  facet_wrap(~ resultado, scales = "free") +
+  scale_colour_manual(values = pal_res, guide = "none") +
+  scale_size_continuous(range = c(2, 5), name = "Partidos") +
+  scale_x_continuous(labels = function(x) paste0(round(x * 100), "%")) +
+  scale_y_continuous(labels = function(x) paste0(round(x * 100), "%")) +
+  labs(title = paste0("Calibración del mercado promedio (", nombre_met[[met_p]], ", ", k_bins, " intervalos de igual frecuencia)"),
+       x = "Probabilidad declarada (sin margen)", y = "Frecuencia observada")
+```
+
+## Desviaciones por intervalo
+
+::: {.metodo}
+**En palabras simples.** La misma curva, pero en una tabla: cuántos puntos se equivocó la casa en cada grupo de partidos. Un +3 quiere decir que el resultado pasó 3 puntos más de lo que decía la cuota (43 % en vez de 40 %).
+
+**Para qué lo usamos.** Para decir de qué tamaño es el error de las casas, y no solo si existe.
+:::
+
+```{r tab-desviaciones}
+t <- cal_ref %>%
+  transmute(Resultado = resultado, `Rango de p` = sprintf("%.2f-%.2f", p_min, p_max), Partidos = n,
+            `P declarada (%)` = round(p_med * 100, 1), `Frec. observada (%)` = round(f_obs * 100, 1),
+            `Desviación (p.p.)` = round(desv_pp, 1),
+            `IC 95% de la desviación (p.p.)` = sprintf("[%.1f; %.1f]", desv_inf, desv_sup))
+kable(t, align = "lcccccc",
+      caption = "Desviación = frecuencia observada - probabilidad declarada. Positiva: el evento ocurrió más de lo declarado.")
+```
+
+`r n_bins_fuera` de `r nrow(cal_ref)` intervalos tienen un IC que excluye la diagonal. Sin corrección por multiplicidad, el azar solo produciría alrededor de `r f1(0.05 * nrow(cal_ref))`. Con `r round(n_com / k_bins)` partidos por intervalo, un intervalo solo puede distinguirse de la diagonal si se desvía más de ±`r f1(mde_bin)` p.p.: **la ausencia de desviaciones significativas no equivale a calibración perfecta**, solo indica que el diseño no detecta desviaciones menores a esa magnitud.
+
+## Pruebas de calibración y magnitud del error
+
+::: {.metodo}
+**En palabras simples.** Tres herramientas que trabajan juntas:
+
+- **ECE:** el error promedio de la casa, en puntos. Ni siquiera una casa perfecta tendría error cero en `r n_com` partidos, porque la suerte siempre mueve un poco los resultados. Por eso simulamos cuánto error tendría una casa perfecta y comparamos.
+- **Hosmer-Lemeshow:** una prueba que responde "¿estos errores son más grandes que los que daría la pura suerte?".
+- **Ajuste de Holm:** hacemos muchas pruebas a la vez (una por casa y por resultado), y alguna saldría "positiva" por casualidad. Holm sube la exigencia para evitar falsas alarmas.
+
+**Para qué lo usamos.** Para separar los errores reales de las casas de la mala suerte normal del fútbol.
+:::
+
+```{r tab-pruebas}
+t <- cal_main %>%
+  left_join(sim_tab, by = c("operador", "resultado")) %>%
+  transmute(Operador = operador, Resultado = resultado, Partidos = n,
+            `ECE observado (p.p.)` = round(ece_pp, 2), `ECE esperado por azar (p.p.)` = round(ece_esp, 2),
+            `p (simulación, Holm)` = fp(p_sim_holm), `p (Hosmer-Lemeshow)` = fp(hl_p),
+            `p HL (Holm)` = fp(hl_p_holm)) %>%
+  arrange(Resultado, Operador)
+kable(t, align = "llcccccc", caption = paste0("Pruebas de calibración por operador y resultado (", nombre_met[[met_p]], ", k = ", k_bins, ")."))
+```
+
+**Significancia vs. relevancia.** `r txt_hl` Con `r n_com` partidos por resultado, un valor p pequeño mediría detectabilidad y no importancia; por eso cada contraste va acompañado del ECE en p.p. y de su referencia bajo azar. Cuando el ECE observado es del mismo orden que el esperado por azar, la desviación es indistinguible del ruido muestral aunque no pueda descartarse una desviación pequeña.
+
+### Pendiente y calibración global (regresión logística de recalibración)
+
+::: {.metodo}
+**En palabras simples.** Mide si la casa se equivoca distinto con los favoritos que con los equipos débiles. Si la **pendiente** es 1, la casa trata bien a ambos. Si es mayor que 1, la casa es demasiado tímida: los favoritos ganan aún más de lo que dice su cuota y las sorpresas pasan menos. Si es menor que 1, la casa exagera. La **calibración global** dice si la casa infla o desinfla un resultado en general; por ejemplo, si siempre le da muy poca probabilidad al empate.
+
+**Para qué lo usamos.** Para ver si las cuotas tienen un sesgo que dependa de quién es el favorito.
+:::
+
+```{r tab-pendiente}
+t <- sl_cons %>%
+  transmute(Resultado = resultado, `Pendiente b` = round(pend, 2),
+            `IC 95% Wald` = sprintf("[%.2f; %.2f]", inf, sup),
+            `IC 95% por bloques` = sprintf("[%.2f; %.2f]", inf_boot, sup_boot),
+            `Calibración global a` = round(citl, 2), `p (a = 0, b = 1)` = fp(lr_p))
+kable(t, align = "lccccc", caption = paste0("Mercado promedio, método ", nombre_met[[met_p]],
+      ". b = 1 y a = 0 indican calibración perfecta; b > 1: los probables ocurren más y los improbables menos de lo declarado."))
+```
+
+`r txt_slope` La diferencia entre el IC de Wald (supone independencia) y el IC por bloques de jornada muestra cuánto afecta la dependencia entre partidos.
+
+## Sensibilidad al esquema de agrupamiento
+
+::: {.metodo}
+**En palabras simples.** La forma de agrupar los partidos podría cambiar lo que se ve. Por eso repetimos todo con `r paste(k_set, collapse = ", ")` grupos.
+
+**Para qué lo usamos.** Para asegurarnos de que la conclusión no depende de cómo cortamos los datos.
+:::
+
+```{r tab-k}
+t <- cal_all %>% filter(metodo == met_p, operador == op_cons) %>%
+  transmute(Resultado = resultado, k = k, `ECE (p.p.)` = round(ece_pp, 2), `p Hosmer-Lemeshow` = fp(hl_p)) %>%
+  arrange(Resultado, k)
+kable(t, align = "lccc", caption = "Mercado promedio: ECE y p de Hosmer-Lemeshow según el número de intervalos.")
+```
+
+```{r k-resumen, include=FALSE}
+rech_k <- cal_all %>% filter(metodo == met_p) %>% group_by(k) %>%
+  summarise(rech = sum(hl_p_holm < 0.05, na.rm = TRUE), tot = n()) %>% ungroup()
+txt_k <- paste(sprintf("k = %d: %d de %d", rech_k$k, rech_k$rech, rech_k$tot), collapse = "; ")
+```
+
+Rechazos de Hosmer-Lemeshow (Holm) en todas las combinaciones operador × resultado según k: `r txt_k`. `r ifelse(length(unique(rech_k$rech)) == 1, "La conclusión no depende del número de intervalos elegido.", "El número de rechazos cambia con k: la conclusión es sensible al agrupamiento y debe leerse con cautela.")`
+
+## Reglas de puntuación frente a líneas base
+
+::: {.metodo}
+**En palabras simples.** Son "notas" de qué tan bien pronosticó cada casa: entre más baja, mejor.
+
+- **Brier:** castiga la distancia entre la probabilidad que dio la casa y lo que pasó. Por ejemplo, si la casa da 50 % al local, 25 % al empate y 25 % al visitante, y gana el local, la nota de ese partido es (0.50 − 1)² + 0.25² + 0.25² = 0.375. Un pronóstico perfecto sacaría 0; dar 33 % a todo, 0.667.
+- **Log-loss:** castiga muy fuerte haber dado casi por descartado algo que sí pasó.
+- **RPS:** tiene en cuenta que decir "gana el local" y que gane el visitante es un error más grave que si empatan.
+
+Comparamos a las casas con dos "apostadores sin información": uno que le da 33 % a todo y otro que siempre usa lo que pasa en promedio (local `r round(frec_hist[1] * 100)` %, empate `r round(frec_hist[2] * 100)` %, visitante `r round(frec_hist[3] * 100)` %).
+
+**Para qué lo usamos.** Para medir cuánto más saben las casas que alguien sin información, y cuál pronostica mejor.
+:::
+
+```{r tab-scores}
+t <- bind_rows(
+  tab_p %>% transmute(Modelo = operador, Brier = brier, `Log-loss` = logloss, RPS = rps,
+                      `Mejora vs. histórica (%)` = round(bss_hist * 100, 2), `Mejora vs. uniforme (%)` = round(bss_uni * 100, 2)),
+  base %>% transmute(Modelo = operador, Brier = brier, `Log-loss` = logloss, RPS = rps,
+                     `Mejora vs. histórica (%)` = round((1 - brier / brier_hist) * 100, 2),
+                     `Mejora vs. uniforme (%)` = round((1 - brier / brier_uni) * 100, 2)))
+kable(t, digits = 4, align = "lccccc",
+      caption = paste0("Menor es mejor. Muestra común de ", n_com, " partidos; método ", nombre_met[[met_p]], "."))
+```
+
+`r txt_brier` El RPS, que penaliza más fallar por dos categorías (local vs. visitante) que por una (local vs. empate), se compara con el Brier mediante la correlación de rangos de Spearman entre operadores: `r f2(rho_rps)`.
+
+### Descomposición de Murphy
+
+::: {.metodo}
+**En palabras simples.** Parte la nota Brier en tres pedazos: qué tan difícil es predecir el fútbol (igual para todos), qué tan bien distingue la casa los partidos claros de los parejos (más es mejor) y cuánto se equivoca en sus porcentajes (menos es mejor).
+
+**Para qué lo usamos.** Para saber si el error de las casas viene de que el fútbol es impredecible o de que sus cuotas están mal puestas.
+:::
+
+```{r tab-murphy}
+t <- mur %>% transmute(Operador = operador, Brier = brier, `Fiabilidad (menor es mejor)` = rel,
+                       `Fiabilidad esperada por azar` = rel_esp,
+                       `Resolución (mayor es mejor)` = res, Incertidumbre = unc, `Residuo intra-intervalo` = resid)
+kable(t, digits = 4, align = "lcccccc",
+      caption = "Brier ≈ Fiabilidad - Resolución + Incertidumbre. La descomposición por intervalos deja un residuo (varianza dentro de cada intervalo).")
+```
+
+En promedio entre operadores, la **incertidumbre** (dificultad intrínseca del fenómeno, igual para todos) es `r f4(mean(mur$unc))`, la **resolución** (cuánto separan los pronósticos unos partidos de otros) es `r f4(mean(mur$res))` y la **fiabilidad** (mala calibración) es `r f4(mean(mur$rel))`, frente a `r f4(mean(mur$rel_esp))` que se esperaría solo por azar muestral con un mercado perfectamente calibrado. La fiabilidad medida es `r f1(mean(mur$rel) / mean(mur$res) * 100)`% de la resolución, y `r f2(mean(mur$rel) / mean(mur$rel_esp))` veces el valor esperado por azar.
+
+## Comparación entre casas (datos apareados)
+
+::: {.metodo}
+**En palabras simples.** Todas las casas ponen cuotas a los mismos partidos: si hay una gran sorpresa, todas fallan a la vez. Por eso las comparamos partido por partido, no solo con su promedio.
+
+- **Friedman:** "¿hay alguna casa que, partido tras partido, acierte más o menos que las otras?".
+- **Wilcoxon:** compara cada casa con `r ref` en los mismos partidos.
+- **Bootstrap por bloques:** repite el cálculo miles de veces sorteando jornadas completas, para obtener un rango creíble de la diferencia.
+
+**Para qué lo usamos.** Para saber si alguna casa sabe más que las demás.
+:::
+
+```{r tab-comparacion}
+t <- comp %>%
+  transmute(Operador = operador, `Dif. de Brier vs. ref. (x1000)` = round(dif * 1000, 2),
+            `IC 95% por bloques (x1000)` = sprintf("[%.2f; %.2f]", inf * 1000, sup * 1000),
+            `p bootstrap (Holm)` = fp(p_boot_holm), `p Wilcoxon (Holm)` = fp(p_wilcox_holm))
+kable(t, align = "lcccc",
+      caption = paste0("Diferencia de Brier por partido contra ", ref, " (positiva: peor que la referencia). Friedman entre casas: p = ", fp(fr$p.value), "."))
+```
+
+```{r fig-comparacion, fig.height = 4, fig.cap = "Diferencia de Brier contra la referencia (por partido) con IC 95% por bloques de jornada."}
+ggplot(comp, aes(x = dif * 1000, y = reorder(operador, dif))) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = inf * 1000, xmax = sup * 1000), colour = "#2b6a9e", linewidth = 0.6, size = 0.5) +
+  labs(title = paste0("Diferencias de calidad entre operadores frente a ", ref),
+       x = "Diferencia de Brier (milésimas)", y = NULL)
+```
+
+`r txt_casas` Que una diferencia sea o no estadísticamente detectable es una pregunta distinta de si importa: aquí el rango entre casas es `r txt_rel_casas` de la mejora que cualquiera de ellas logra sobre la línea base histórica.
+
+## Sesgo favorito-longshot
+
+El sesgo favorito-longshot implica que los resultados improbables están sobrevalorados y los favoritos infravalorados, es decir, **pendiente de recalibración mayor que 1**. La pendiente se estima por operador, resultado y método de remoción del margen.
+
+::: {.metodo}
+**En palabras simples.** En muchos mercados de apuestas se ha visto que las cuotas de los equipos débiles pagan menos de lo que deberían (la casa les da más probabilidad de la real), y las de los favoritos un poco más. Se llama **sesgo favorito-longshot**.
+
+**Para qué lo usamos.** Para ver si eso pasa en LaLiga. Si existiera, la pendiente sería mayor que 1. Lo revisamos con las tres formas de quitar el margen, porque justamente se diferencian en cuánto margen le cargan a los resultados poco probables.
+:::
+
+```{r fig-pendiente, fig.height = 6, fig.cap = "Pendiente de recalibración (IC 95% de Wald). 1 = calibración perfecta; mayor que 1 es la dirección del sesgo favorito-longshot."}
+sp <- slope_tab %>% mutate(resultado = factor(resultado, levels = c(resultados, "Todos")),
+                           metodo_lab = factor(metodo_lab, levels = names(pal_met)))
+ggplot(sp, aes(x = pend, y = operador, colour = metodo_lab)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = inf, xmax = sup), position = position_dodge(width = 0.7), linewidth = 0.4, size = 0.3) +
+  facet_wrap(~ resultado, nrow = 1) +
+  scale_colour_manual(values = pal_met, name = "Método de remoción del margen") +
+  labs(title = "Pendiente de calibración por operador, resultado y método", x = "Pendiente", y = NULL)
+```
+
+```{r tab-flb}
+t <- slope_tab %>% filter(resultado == "Todos") %>%
+  transmute(Operador = operador, Método = metodo_lab, Pendiente = round(pend, 2),
+            `IC 95% (Wald)` = sprintf("[%.2f; %.2f]", inf, sup)) %>% arrange(Operador, Método)
+kable(t, align = "llcc", caption = "Pendiente agregando los tres resultados.")
+```
+
+`r txt_slope` `r sprintf("De %d estimaciones agregadas, %d tienen un IC que contiene a 1.", sum(slope_tab$resultado == "Todos"), sum(slope_tab$resultado == "Todos" & slope_tab$inf <= 1 & slope_tab$sup >= 1))`
+
+## Sensibilidad al método de remoción del margen
+
+::: {.metodo}
+**En palabras simples.** No sabemos cómo reparte cada casa su ganancia entre local, empate y visitante, así que repetimos todo con tres supuestos distintos.
+
+**Para qué lo usamos.** Si una conclusión aparece con un supuesto y desaparece con otro, es del supuesto, no de las casas.
+:::
+
+`r txt_sens`
+
+```{r tab-metodos}
+t <- tab_scores %>% filter(operador %in% c(op_cons, ref)) %>%
+  transmute(Operador = operador, Método = unname(nombre_met[metodo]), Brier = brier, `Log-loss` = logloss, RPS = rps) %>%
+  arrange(Operador, Método)
+kable(t, digits = 4, align = "llccc", caption = "Puntuación según el método de remoción del margen.")
+```
+
+### ¿Hay casas mejores que otras? Depende del método
+
+```{r tab-fried-met}
+t <- fried_met %>% transmute(Método = unname(nombre_met[metodo]), `p Friedman` = fp(p),
+                             `Distancia mejor-peor (milésimas de Brier)` = round(rango_mil, 2),
+                             `% de la mejora sobre la línea base` = round(razon * 100, 1),
+                             `Mejor puesto medio` = mejor, `Peor puesto medio` = peor,
+                             `Relación entre puesto y margen (Spearman)` = round(rho_margen, 2))
+kable(t, align = "lcccccc", caption = "Comparación entre casas (Friedman, mismos partidos) con cada método de remoción del margen. Puesto medio: posición promedio de la casa partido a partido (1 = la que menos se equivoca).")
+```
+
+`r txt_fried`
+
+```{r tab-ece-met}
+kable(ece_met %>% mutate(Método = unname(nombre_met[metodo])) %>% select(Método, Local, Empate, Visitante) %>%
+        mutate(across(where(is.numeric), ~ round(.x, 2))),
+      align = "lccc", caption = paste0("ECE (p.p.) del mercado promedio según el método (k = ", k_bins, ")."))
+```
+
+**Dónde difieren los métodos.** La diferencia de cada método respecto del método principal (`r nombre_met[[met_p]]`), según la probabilidad que asigna este, muestra el supuesto de reparto del margen:
+
+```{r tab-mecanismo}
+t <- mecan %>% transmute(Método = unname(nombre_met[metodo]),
+                         !!paste0("Tramo de probabilidad (", nombre_met[[met_p]], ")") := as.character(tramo),
+                         Observaciones = n, `Diferencia media (p.p.)` = round(dif, 3))
+kable(t, align = "llcc", caption = paste0("Diferencia media (método - ", tolower(nombre_met[[met_p]]), ") por tramo de probabilidad, mercado promedio."))
+```
+
+`r txt_mecan` Por eso las pendientes de recalibración deben compararse entre métodos antes de afirmar algo sobre el sesgo favorito-longshot: si apareciera con un método y desapareciera con otro, el hallazgo sería del método, no del mercado.
+
+## Cuotas de apertura vs. cierre
+
+::: {.metodo}
+**En palabras simples.** La cuota de apertura sale días antes del partido; la de cierre, minutos antes, cuando ya se conocen alineaciones y lesiones y la casa ha visto cómo está apostando la gente.
+
+**Para qué lo usamos.** Para ver si la cuota mejora con la información de última hora.
+:::
+
+```{r tab-cierre, eval = tiene_cierre}
+t <- oc_tab %>% transmute(Métrica = metrica, Apertura = apertura, Cierre = cierre,
+                          `Apertura - cierre (x1000)` = round(dif * 1000, 2),
+                          `IC 95% por bloques (x1000)` = sprintf("[%.2f; %.2f]", inf * 1000, sup * 1000), p = fp(p))
+kable(t, digits = 4, align = "lccccc",
+      caption = paste0("Pinnacle, ", n_oc, " partidos pareados. Diferencia positiva: el cierre puntúa mejor."))
+```
+
+`r txt_cierre` `r if (tiene_cierre) paste0("El margen medio pasa de ", f2(marg_open), " p.p. (apertura) a ", f2(marg_close), " p.p. (cierre). Un cierre con mejor puntuación es consistente con que el precio incorpora información disponible hasta el inicio del partido (alineaciones, lesiones, movimientos del mercado).") else ""`
+
+# Objetivo secundario: ¿estaban preparadas las casas para la inclusión del VAR?
+
+`r if (!hay_var) paste0("La base no contiene temporadas anteriores y posteriores a ", tv, ", de modo que esta pregunta no puede evaluarse con los datos actuales.") else ""`
+
+```{r var-cuerpo, eval = hay_var, results = "asis"}
+cat(paste0(
+  "LaLiga incorporó el videoarbitraje (VAR) a partir de la temporada ", tv, ". Si las casas anticiparon bien su efecto, sus probabilidades sin margen ",
+  "deberían seguir igual de calibradas que antes y acompañar cualquier cambio en la frecuencia de los resultados. Si no lo anticiparon, ",
+  "aparecería una brecha entre lo declarado y lo observado en ", tv, " que no existía antes. ",
+  "Se compara ", lab_per[["Sin VAR"]], " con ", lab_per[["Con VAR"]], " (", length(i0), " y ", length(i1), " partidos), con el método ",
+  nombre_met[[met_p]], " y ", k_t, " intervalos de igual frecuencia por curva. ",
+  "Los partidos de una y otra temporada son distintos, así que las comparaciones entre periodos usan *bootstrap* por bloques de jornada dentro de cada periodo.\n\n",
+  "**Respuesta corta.** ", s_var, "\n\n**Respuesta técnica.** ", txt_var_veredicto, "\n\n"))
+```
+
+## Calibración antes y después del VAR
+
+::: {.metodo}
+**En palabras simples.** Las mismas curvas de antes, una por temporada.
+
+**Para qué lo usamos.** Si las casas no se adaptaron al VAR, la curva de la temporada con VAR se alejaría más de la diagonal.
+:::
+
+```{r fig-var-curvas, eval = hay_var, fig.height = 4.8, fig.cap = "Curvas de calibración del mercado promedio por periodo. Barras: IC 95% de Wilson. Si el mercado se hubiera descalibrado con el VAR, la curva con VAR se apartaría de la diagonal más que la curva sin VAR."}
+lim_v <- cal_per %>% group_by(resultado) %>%
+  summarise(lo = max(0, min(c(p_med, inf))), hi = min(1, max(c(p_med, sup)))) %>% ungroup()
+ggplot(cal_per, aes(x = p_med, y = f_obs, colour = periodo)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", colour = "grey55") +
+  geom_blank(data = lim_v, aes(x = lo, y = lo), inherit.aes = FALSE) +
+  geom_blank(data = lim_v, aes(x = hi, y = hi), inherit.aes = FALSE) +
+  geom_errorbar(aes(ymin = inf, ymax = sup), width = 0, linewidth = 0.6, alpha = 0.7,
+                position = position_dodge(width = 0.012)) +
+  geom_line(linewidth = 0.6, alpha = 0.7, position = position_dodge(width = 0.012)) +
+  geom_point(aes(shape = periodo), size = 2.6, position = position_dodge(width = 0.012)) +
+  facet_wrap(~ resultado, scales = "free") +
+  scale_colour_manual(values = pal_per, name = NULL) +
+  scale_shape_manual(values = c(16, 17), name = NULL) +
+  scale_x_continuous(labels = function(x) paste0(round(x * 100), "%")) +
+  scale_y_continuous(labels = function(x) paste0(round(x * 100), "%")) +
+  labs(title = "Calibración del mercado promedio, sin VAR y con VAR",
+       x = "Probabilidad declarada (sin margen)", y = "Frecuencia observada")
+```
+
+## ¿Acompañaron los precios el cambio en los resultados?
+
+::: {.metodo}
+**En palabras simples.** Compara dos cambios de una temporada a otra: cuánto cambió lo que pasó en la cancha y cuánto cambiaron las cuotas. Si la casa se adaptó, los dos cambios son iguales. Ejemplo con cifras inventadas: si un resultado pasa a ocurrir 4 puntos más y la casa solo sube su probabilidad 1 punto, quedan 3 puntos que la casa no vio venir.
+
+**Para qué lo usamos.** Para medir directamente si las cuotas siguieron lo que el VAR cambió en los partidos.
+:::
+
+```{r fig-var-did, eval = hay_var, fig.height = 4.2, fig.cap = "Probabilidad media declarada por el mercado (línea discontinua) y frecuencia observada (línea continua, IC 95% de Wilson) por temporada. Si los precios hubieran acompañado el cambio, ambas líneas se moverían en paralelo."}
+dd <- bind_rows(
+  temp_tab %>% transmute(temporada, resultado, tipo = "Declarada por el mercado", val = pred * 100, inf = NA_real_, sup = NA_real_),
+  temp_tab %>% transmute(temporada, resultado, tipo = "Observada", val = obs * 100, inf = inf * 100, sup = sup * 100))
+ggplot(dd, aes(x = temporada, y = val, group = tipo, colour = tipo, linetype = tipo)) +
+  geom_errorbar(aes(ymin = inf, ymax = sup), width = 0.06, linewidth = 0.6, linetype = "solid", na.rm = TRUE) +
+  geom_line(linewidth = 0.8) + geom_point(size = 2.6) +
+  geom_vline(xintercept = which(sort(unique(dd$temporada)) == tv) - 0.5, colour = "grey60", linetype = "dotted") +
+  facet_wrap(~ resultado, scales = "free_y") +
+  scale_colour_manual(values = c("Declarada por el mercado" = "#5b6770", "Observada" = "#d1603d"), name = NULL) +
+  scale_linetype_manual(values = c("Declarada por el mercado" = "dashed", "Observada" = "solid"), name = NULL) +
+  labs(title = "Cambio en la frecuencia de cada resultado frente al cambio en el precio",
+       subtitle = paste0("Línea punteada vertical: entrada del VAR (", tv, ")"), x = NULL, y = "%")
+```
+
+```{r tab-var-did, eval = hay_var}
+t <- did_tab %>% transmute(Resultado = resultado,
+  `Declarada sin VAR (%)` = round(pred0 * 100, 1), `Observada sin VAR (%)` = round(obs0 * 100, 1),
+  `Declarada con VAR (%)` = round(pred1 * 100, 1), `Observada con VAR (%)` = round(obs1 * 100, 1),
+  `Cambio declarado (p.p.)` = sprintf("%+.1f", dpred * 100), `Cambio observado (p.p.)` = sprintf("%+.1f", dobs * 100),
+  `Diferencia (p.p.)` = sprintf("%+.1f", did * 100), `IC 95% por bloques` = sprintf("[%+.1f; %+.1f]", inf * 100, sup * 100),
+  `p (Holm)` = fp(p_holm))
+kable(t, align = "lccccccccc", caption = "Diferencia en diferencias: cambio observado menos cambio declarado. Cero significa que el precio acompañó exactamente el cambio de la frecuencia.")
+```
+
+`r if (hay_var) txt_var_did else ""` `r if (hay_var) paste0("Las frecuencias de los resultados no fueron iguales entre temporadas (chi-cuadrado de homogeneidad, p = ", fp(chi_tasas$p.value), ").") else ""`
+
+## Prueba formal de cambio en la calibración
+
+::: {.metodo}
+**En palabras simples.** La misma medida de sesgo de antes (pendiente y calibración global), pero comparando una temporada con otra, junto con una prueba que dice si el cambio es real o fue suerte.
+
+**Para qué lo usamos.** Para saber si, con el VAR, cambió la forma en que las casas se equivocan.
+:::
+
+```{r tab-var-lr, eval = hay_var}
+t <- lr_tab %>% transmute(Resultado = resultado,
+  `Pendiente sin VAR` = round(pend0, 2), `Pendiente con VAR` = round(pend1, 2),
+  `Calibración global sin VAR` = round(citl0, 2), `Calibración global con VAR` = round(citl1, 2),
+  `p (cambio conjunto)` = fp(p), `p (Holm)` = ifelse(resultado == "Todos", "—", fp(p_holm)))
+kable(t, align = "lcccccc", caption = "Regresión logística y ~ logit(p) × periodo: la prueba de razón de verosimilitudes (2 gl) contrasta si la pendiente o la calibración global cambiaron con el VAR. Pendiente 1 y calibración global 0 indican calibración perfecta.")
+```
+
+La magnitud de estos cambios en puntos porcentuales es la de la tabla de diferencias anterior; el valor p solo indica si son distinguibles del azar con `r if (hay_var) length(i1) else ""` partidos por periodo.
+
+## ¿Empeoró el pronóstico o se volvió más difícil el fenómeno?
+
+::: {.metodo}
+**En palabras simples.** La nota Brier partida en sus tres pedazos, ahora por temporada.
+
+**Para qué lo usamos.** Si las casas acertaron menos con el VAR, para saber si fue porque pusieron mal las cuotas o porque esa temporada tuvo más sorpresas y era más difícil de predecir.
+:::
+
+```{r tab-var-murphy, eval = hay_var}
+kable(mur_per %>% transmute(Periodo = periodo, Brier = brier, `Fiabilidad (mala calibración)` = rel,
+                            `Fiabilidad esperada por azar` = rel_esp, Resolución = res, Incertidumbre = unc),
+      digits = 4, align = "lccccc", caption = "Descomposición de Murphy del Brier del mercado promedio por periodo.")
+```
+
+`r if (hay_var) paste(txt_var_brier, txt_var_murphy) else ""`
+
+## Comparación por operador
+
+::: {.metodo}
+**En palabras simples.** El error promedio de cada casa, en puntos, antes y después del VAR, comparado con el que tendría una casa perfecta solo por suerte (la franja gris).
+
+**Para qué lo usamos.** Para ver si el desajuste fue de una casa o de todas.
+:::
+
+```{r fig-var-operadores, eval = hay_var, fig.height = 4, fig.cap = "Error de calibración de cada operador (promedio de los tres resultados, en p.p.) sin VAR y con VAR. La franja gris marca el error que tendría un pronóstico perfectamente calibrado solo por azar con este número de partidos: un punto dentro o a la izquierda de la franja está tan bien calibrado como permite medir la muestra."}
+ev <- ece_per %>%
+  mutate(nombre = ifelse(operador == "Promedio_Apertura", "Mercado promedio", operador)) %>%
+  transmute(nombre, sin = `ece_Sin VAR`, con = `ece_Con VAR`)
+ev$nombre <- factor(ev$nombre, levels = ev$nombre[order(ev$con)])
+ev_l <- bind_rows(ev %>% transmute(nombre, periodo = lab_per[["Sin VAR"]], ece = sin),
+                  ev %>% transmute(nombre, periodo = lab_per[["Con VAR"]], ece = con)) %>%
+  mutate(periodo = factor(periodo, levels = unname(lab_per)))
+esp_lo <- min(c(ece_per$`ece_esp_Sin VAR`, ece_per$`ece_esp_Con VAR`))
+esp_hi <- max(c(ece_per$`ece_esp_Sin VAR`, ece_per$`ece_esp_Con VAR`))
+ggplot(ev_l, aes(x = ece, y = nombre)) +
+  geom_blank() +
+  annotate("rect", xmin = esp_lo - 0.05, xmax = esp_hi + 0.05, ymin = -Inf, ymax = Inf, fill = "grey88") +
+  geom_segment(data = ev, aes(x = sin, xend = con, y = nombre, yend = nombre), colour = "grey65", linewidth = 1.1) +
+  geom_point(aes(colour = periodo, shape = periodo), size = 3.4) +
+  scale_colour_manual(values = pal_per, name = NULL) +
+  scale_shape_manual(values = c(16, 17), name = NULL) +
+  scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "¿Cuánto se aparta cada operador de la calibración perfecta?",
+       subtitle = paste0("Franja gris: error que tendría un pronóstico perfecto solo por azar con ", length(i1), " partidos por periodo"),
+       x = "Error medio de calibración (p.p.)", y = NULL)
+```
+
+`r if (hay_var) txt_var_ops else ""`
+
+```{r tab-var-operadores, eval = hay_var}
+t <- dbr %>% left_join(ece_per, by = "operador") %>% left_join(marg_per %>% select(operador, dm), by = "operador") %>%
+  transmute(Operador = operador, `Brier sin VAR` = round(b0, 4), `Brier con VAR` = round(b1, 4),
+            `Cambio (x1000)` = sprintf("%+.1f", dif * 1000), `IC 95%` = sprintf("[%+.1f; %+.1f]", inf * 1000, sup * 1000),
+            `p (Holm)` = fp(p_holm),
+            `ECE sin VAR (p.p.)` = round(`ece_Sin VAR`, 1), `ECE con VAR (p.p.)` = round(`ece_Con VAR`, 1),
+            `ECE esperado por azar (p.p.)` = round((`ece_esp_Sin VAR` + `ece_esp_Con VAR`) / 2, 1),
+            `Cambio de margen (p.p.)` = ifelse(is.na(dm), "—", sprintf("%+.2f", dm))) %>% arrange(Operador)
+kable(t, align = "lccccccccc", caption = paste0("Por operador: Brier y ECE (promedio de los tres resultados, k = ", k_t, ") en cada periodo. El ECE esperado por azar es el que tendría un pronóstico perfectamente calibrado con este tamaño de muestra."))
+```
+
+`r if (hay_var) paste0(n_dbr_sig, " de ", nrow(dbr), " operadores muestran un cambio del Brier significativo tras el ajuste de Holm. ", txt_var_margen) else ""`
+
+## Adaptación dentro de la temporada
+
+::: {.metodo}
+**En palabras simples.** El error de las cuotas en la primera y en la segunda mitad de cada temporada.
+
+**Para qué lo usamos.** Si las casas no esperaban el efecto del VAR pero aprendieron sobre la marcha, el error debería ser grande al inicio de la temporada con VAR y achicarse después.
+:::
+
+```{r fig-var-mitades, eval = hay_var, fig.height = 4.2, fig.cap = "Desviación (frecuencia observada menos probabilidad declarada) por mitad de temporada, mercado promedio, con IC 95% de Wilson. La línea vertical marca la entrada del VAR."}
+ggplot(mitad_tab, aes(x = tramo, y = dev, colour = periodo, group = 1)) +
+  geom_hline(yintercept = 0, colour = "grey55", linetype = "dashed") +
+  geom_line(colour = "grey70", linewidth = 0.5) +
+  geom_pointrange(aes(ymin = inf, ymax = sup), linewidth = 0.6, size = 0.45) +
+  geom_vline(xintercept = pos_var, colour = "grey60", linetype = "dotted") +
+  facet_wrap(~ resultado) +
+  scale_colour_manual(values = pal_per, name = NULL) +
+  labs(title = "¿Se corrigió el desajuste a lo largo de la temporada con VAR?", x = NULL, y = "Desviación (p.p.)") +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1, size = 8))
+```
+
+`r if (hay_var) txt_var_mitad else ""`
+
+## Alcance de esta conclusión
+
+`r if (hay_var) paste0("Este análisis compara solo ", length(temps), " temporadas de una liga, sin grupo de control: cualquier diferencia entre ellas puede deberse al VAR, a cambios en las plantillas, al calendario o al azar, y el diseño no permite separar esas causas. Por eso la pregunta se responde en términos de si los precios acompañaron lo que ocurrió, no de si el VAR causó el cambio. Un diseño más fuerte usaría como control una liga que todavía no tenía VAR en ", tv, " (por ejemplo, la Premier League lo adoptó en 2019/20) y compararía la evolución de ambas.") else ""`
+
+# Discusión
+
+**¿Qué quiere decir que las cuotas "acierten"?** Que se pueden tomar al pie de la letra: si una cuota implica un 30 %, ese resultado pasa más o menos 30 de cada 100 veces. `r s_cal`
+
+**Que una prueba "no encuentre nada" no es lo mismo que "no hay nada".** Con `r n_com` partidos, solo se puede detectar un error de las cuotas si es mayor de unos `r f1(mde_bin)` puntos en un grupo de partidos. Al revés, con cien mil partidos cualquier error minúsculo saldría "significativo" aunque no le importara a nadie. Por eso este reporte siempre dice de qué tamaño es el error: la pregunta útil es *cuánto* se equivocan las cuotas. Aquí, `r f1(ece_c_med)` puntos en promedio, `r ifelse(ece_c_med <= ece_c_esp * 1.15, "lo mismo que daría la pura suerte", "algo más de lo que daría la pura suerte")` (`r f1(ece_c_esp)`).
+
+**Las casas compiten en precio, no en conocimiento.** `r s_casas` El margen, en cambio, va de `r f1(m_min)` a `r f1(m_max)` puntos.
+
+**El precio se afina con la información.** `r s_cierre`
+
+**El VAR.** `r s_var` `r s_var_murphy`
+
+**Lo que este análisis no permite decir.** Que las cuotas acierten en conjunto no descarta pequeños errores en grupos concretos de partidos. Y aunque apareciera alguno, no sería una forma de ganar: el margen está dentro de cada cuota y lo que pasó en temporadas anteriores no garantiza nada sobre las siguientes. Este reporte no propone ni sugiere ninguna estrategia.
+
+# Limitaciones
+
+- **Dependencia entre partidos.** Los partidos comparten equipos y jornadas; Hosmer-Lemeshow, la prueba basada en ECE simulado y los IC de Wilson suponen independencia. Las comparaciones entre casas y las pendientes del mercado promedio usan *bootstrap* por bloques de `r n_clus` semanas martes-lunes, un proxy de jornada, no la jornada real.
+- **Tamaño de muestra.** `r n_part` partidos en `r n_temp` temporada(s) de una sola liga: poca potencia por intervalo (≈ ±`r f1(mde_bin)` p.p.) y ninguna conclusión sobre otras ligas o épocas.
+- **Cobertura desigual.** Solo hay un conjunto reducido de operadores; el cierre existe únicamente para Pinnacle (`r n_oc` partidos pareados). `r if (nrow(falt_df) > 0) paste0("Faltan cuotas en ", nrow(falt_df), " registro(s) operador × partido (", paste(sprintf("%s en %s, %s", falt_df$Operador, falt_df$Partido, falt_df$Fecha), collapse = "; "), "); no se imputaron.") else ""` `r if (nrow(atip) > 0) paste0("Se marcó ", nrow(atip), " margen(es) atípico(s) por posible error de captura (", paste(sprintf("%s en %s, %s p.p.", atip_df$Operador, atip_df$Partido, f1(atip_df[["Margen (p.p.)"]])), collapse = "; "), "); se conservaron, con efecto despreciable sobre el Brier (≤ ", f4(delta_atip), ").") else ""`
+- **Comparaciones múltiples.** Se declararon tres familias con ajuste de Holm; las pendientes y los análisis de apertura-cierre son descriptivos o de una sola hipótesis.
+- **Sensibilidad metodológica.** Las conclusiones se contrastaron entre tres métodos de remoción del margen y entre `r length(k_set)` esquemas de agrupamiento. Aun así, ningún método puede observar cómo el operador repartió realmente su margen.
+- **Línea base histórica.** Usa las frecuencias de la propia muestra, lo que la favorece levemente; las mejoras de los operadores sobre ella son, si acaso, conservadoras.
+- **Anotación de apertura.** La base llama *apertura* a las cuotas pre-partido de las casas; su momento exacto de captura debe verificarse en la documentación de Football-Data.
+- **Alcance del descubrimiento.** Se trata de un ejercicio retrospectivo y académico, sin recomendación de ningún tipo.
+
+# Reproducibilidad
+
+El reporte se regenera por completo con el flujo completo, `source("scripts/ejecutar_todo.R")`, que corre en orden los scripts 01 a 05 y luego este reporte; o solo el reporte, con el botón *Knit* sobre **`r basename(knitr::current_input())`**. Para otra liga o temporada basta editar `scripts/00_configuracion.R` y poner los CSV de Football-Data en `datos_crudos/`; las temporadas, los operadores y los resultados se detectan desde la base. Semilla: `r params$semilla`.
+
+```{r sesion, echo = FALSE, comment = ""}
+cat(capture.output(sessionInfo()), sep = "\n")
+```

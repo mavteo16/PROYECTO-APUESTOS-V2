@@ -1,29 +1,33 @@
 # ==============================================================================
-# MOTOR MAESTRO DE ANÁLISIS PREDICTIVO Y FIABILIDAD (VERSIÓN ORDENADA - TESIS)
+# 04_ANALISIS_TEMPORADAS.R
+# ==============================================================================
+# Proyecto : ¿Están bien calibradas las casas de apuestas?
+# Curso    : Estadística Industrial · Universidad del Magdalena · 2026-II
+# Autores  : Mateo Valencia, Samuel Lopez, Camilo Henriquez,
+#            Valeria De Jesus Gutierrez Nuñez
+#
+# Qué hace : Evalúa cada operador en cada temporada con las probabilidades del método de
+#            potencia: Brier, log-loss y error de calibración (ECE, 10 intervalos), y
+#            dibuja la curva de fiabilidad de cada operador.
+# Lee      : datos/Base_Analitica_Entregable_1.csv
+# Genera   : Resultados/Tablas_CSV/1_Precision_Predictiva_<temporada>.csv
+#            Resultados/Tablas_CSV/2_Fiabilidad_Estructural_<temporada>.csv
+#            Resultados/Graficos_Globales/Grafico_1 y Grafico_2 por temporada
+#            Resultados/Curvas_Fiabilidad/<temporada>/Curva_Fiabilidad_<operador>.png
+# Antes    : 03_margen_probabilidades.R
+# Después  : 05_comparativo_VAR.R
 # ==============================================================================
 
-# 1. CONFIGURACIÓN DE RUTAS Y JERARQUÍA DE SUBCARPETAS
+# 0. CONFIGURACIÓN (rutas y parámetros centralizados en 00_configuracion.R)
 # ------------------------------------------------------------------------------
-ruta_cruda <- "C:/Users/Invitadou/Downloads/Base_Unificada_Limpia_VAR_probabilidades_VAR.csv"
-ruta <- gsub("\\\\", "/", ruta_cruda)
-ruta <- gsub("\"", "", ruta)
-
-# Directorio Maestro de Resultados
-ruta_resultados <- "C:/Users/Invitadou/Desktop/PROYECTO-APUESTAS/Resultados"
-ruta_resultados <- gsub("\\\\", "/", ruta_resultados)
-
-# Creación de la jerarquía profesional de subcarpetas
-dir_tablas      <- file.path(ruta_resultados, "Tablas_CSV")
-dir_graf_glob   <- file.path(ruta_resultados, "Graficos_Globales")
-dir_curvas_1718 <- file.path(ruta_resultados, "Curvas_Fiabilidad", "1718_Pre_VAR")
-dir_curvas_1819 <- file.path(ruta_resultados, "Curvas_Fiabilidad", "1819_Post_VAR")
-
-directorios_necesarios <- c(dir_tablas, dir_graf_glob, dir_curvas_1718, dir_curvas_1819)
-for (d in directorios_necesarios) {
-  if (!dir.exists(d)) {
-    dir.create(d, recursive = TRUE)
-  }
+if (!exists("CONFIG_CARGADA")) {
+  source(if (file.exists("scripts/00_configuracion.R")) "scripts/00_configuracion.R" else "00_configuracion.R",
+         encoding = "UTF-8")
 }
+
+# 1. RUTAS Y CARPETAS (definidas en 00_configuracion.R)
+# ------------------------------------------------------------------------------
+# dir_tablas, dir_graf_glob, dir_curvas_1718, dir_curvas_1819 y ruta_resultados
 
 # Paleta de colores institucional y profesional
 col_H <- "#2b6a9e"    # Azul Acero (Local)
@@ -36,11 +40,11 @@ cat("\n========================================================================\
 cat(">> INICIANDO MOTOR DE ANÁLISIS UNIFICADO Y ORGANIZACIÓN DE REPOSITORIO\n")
 cat("========================================================================\n")
 
-base_datos <- read.csv(ruta, stringsAsFactors = FALSE)
+base_datos <- read.csv(ruta_base_analitica, stringsAsFactors = FALSE)
 
 # Partición estructural segura (380 partidos por temporada inglesa/española estándar)
-base_1718 <- base_datos[1:380, ]
-base_1819 <- base_datos[381:nrow(base_datos), ]
+base_1718 <- base_datos[1:partidos_por_temporada, ]
+base_1819 <- base_datos[(partidos_por_temporada + 1):nrow(base_datos), ]
 
 # 3. DEFINICIÓN DE FUNCIONES MATEMÁTICAS AUXILIARES
 # ------------------------------------------------------------------------------

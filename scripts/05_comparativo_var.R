@@ -1,23 +1,31 @@
 # ==============================================================================
-# MOTOR COMPARATIVO DE IMPACTO TECNOLÓGICO: PRE-VAR vs POST-VAR (ORGANIZADO)
+# 05_COMPARATIVO_VAR.R
+# ==============================================================================
+# Proyecto : ¿Están bien calibradas las casas de apuestas?
+# Curso    : Estadística Industrial · Universidad del Magdalena · 2026-II
+# Autores  : Mateo Valencia, Samuel Lopez, Camilo Henriquez,
+#            Valeria De Jesus Gutierrez Nuñez
+#
+# Qué hace : Compara la temporada sin VAR (2017/18) con la temporada con VAR (2018/19):
+#            cambio del Brier y del ECE por operador, y curvas de calibración del
+#            mercado promedio superpuestas para local, empate y visitante.
+# Lee      : datos/Base_Analitica_Entregable_1.csv
+# Genera   : Resultados/Tablas_CSV/Tabla_Delta_Precision_VAR.csv y Tabla_Delta_Fiabilidad_VAR.csv
+#            Resultados/Graficos_Globales/Grafico_A a Grafico_E
+# Antes    : 04_analisis_temporadas.R
+# Después  : reporte/Reporte-De-Calibracion.Rmd (lo ejecuta ejecutar_todo.R)
 # ==============================================================================
 
-# 1. CONFIGURACIÓN DE RUTAS Y JERARQUÍA DE SUBCARPETAS
+# 0. CONFIGURACIÓN (rutas y parámetros centralizados en 00_configuracion.R)
 # ------------------------------------------------------------------------------
-ruta_cruda <- "C:/Users/Invitadou/Downloads/Base_Unificada_Limpia_VAR_probabilidades_VAR.csv"
-ruta_cruda <- gsub("\\\\", "/", ruta_cruda)
-ruta_cruda <- gsub("\"", "", ruta_cruda)
-
-# Directorio Maestro de Resultados y subcarpetas destino
-ruta_resultados <- "C:/Users/Invitadou/Desktop/PROYECTO-APUESTAS/Resultados"
-dir_tablas    <- file.path(ruta_resultados, "Tablas_CSV")
-dir_graf_glob <- file.path(ruta_resultados, "Graficos_Globales")
-
-for (d in c(dir_tablas, dir_graf_glob)) {
-  if (!dir.exists(d)) {
-    dir.create(d, recursive = TRUE)
-  }
+if (!exists("CONFIG_CARGADA")) {
+  source(if (file.exists("scripts/00_configuracion.R")) "scripts/00_configuracion.R" else "00_configuracion.R",
+         encoding = "UTF-8")
 }
+
+# 1. RUTAS Y CARPETAS (definidas en 00_configuracion.R)
+# ------------------------------------------------------------------------------
+# dir_tablas y dir_graf_glob
 
 # Paleta de colores para comparaciones (Azul=Pre-VAR, Rojo=Post-VAR)
 col_pre  <- "#2b6a9e"   # Azul Acero
@@ -26,13 +34,11 @@ col_post <- "#e07a5f"   # Terracota
 # 2. LECTURA Y SEPARACIÓN ESTRUCTURAL (380 PARTIDOS POR TEMPORADA)
 # ------------------------------------------------------------------------------
 cat("\n>> Iniciando cálculos comparativos (Delta) Pre-VAR vs Post-VAR...\n")
-base_datos <- read.csv(ruta_cruda, stringsAsFactors = FALSE)
+base_datos <- read.csv(ruta_base_analitica, stringsAsFactors = FALSE)
 
-# Partición estructural dura para evitar problemas de formato de fecha
-base_1718 <- base_datos[1:380, ]
-base_1819 <- base_datos[381:nrow(base_datos), ]
+base_1718 <- base_datos[1:partidos_por_temporada, ]
+base_1819 <- base_datos[(partidos_por_temporada + 1):nrow(base_datos), ]
 
-# Función de binarización
 preparar_verdad <- function(df) {
   df$Obs_Local  <- ifelse(df$Resultado_Final == "H", 1, 0)
   df$Obs_Empate <- ifelse(df$Resultado_Final == "D", 1, 0)
@@ -75,7 +81,7 @@ calcular_metricas <- function(datos) {
 met_1718 <- calcular_metricas(base_1718)
 met_1819 <- calcular_metricas(base_1819)
 
-# 4. CONSTRUCCIÓN DE LA MATRIZ DELTA (POST - PRE) Y EXPORTACIÓN A Tablas_CSV
+# 4. CONSTRUCCIÓN DE LA MATRIZ DELTA Y EXPORTACIÓN
 # ------------------------------------------------------------------------------
 delta_prec <- merge(met_1718$prec, met_1819$prec, by = "Casa_Apuestas", suffixes = c("_pre", "_post"))
 delta_prec$Delta_Brier <- delta_prec$Brier_post - delta_prec$Brier_pre
@@ -89,7 +95,7 @@ delta_fiab <- delta_fiab[order(delta_fiab$Delta_ECE_Prom, decreasing = TRUE), ]
 write.csv(delta_prec, file.path(dir_tablas, "Tabla_Delta_Precision_VAR.csv"), row.names = FALSE)
 write.csv(delta_fiab, file.path(dir_tablas, "Tabla_Delta_Fiabilidad_VAR.csv"), row.names = FALSE)
 
-# 5. ESTRATEGIA GRÁFICA A: DUMBBELL PLOT (PRECISIÓN) -> Graficos_Globales
+# 5. GRÁFICO A: DUMBBELL PLOT (PRECISIÓN) - [CORREGIDO SUPERPOSICIÓN LEYENDA]
 # ------------------------------------------------------------------------------
 dp <- delta_prec[order(delta_prec$Brier_pre, decreasing = FALSE), ]
 y_coords <- 1:nrow(dp)
@@ -97,7 +103,9 @@ xlims <- c(min(dp$Brier_pre, dp$Brier_post) - 0.005, max(dp$Brier_pre, dp$Brier_
 
 png(file.path(dir_graf_glob, "Grafico_A_Impacto_Brier_Mancuernas.png"), width = 1100, height = 650, res = 120)
 par(mar = c(5, 12, 4, 2), bg = "#fcfcfc")
-plot(0, 0, type = "n", xlim = xlims, ylim = c(0.5, nrow(dp) + 0.5), yaxt = "n", 
+
+# Se aumenta el límite Y superior para dar espacio exclusivo a la leyenda
+plot(0, 0, type = "n", xlim = xlims, ylim = c(0.5, nrow(dp) + 1.5), yaxt = "n", 
      xlab = "Brier Score (Valores mayores indican más error)", ylab = "", 
      main = "Colapso de Precisión Predictiva (Efecto VAR)\nDesplazamiento del Error Cuadrático Medio por Operador")
 grid(nx = NULL, ny = NA, col = "gray85", lty = 2)
@@ -107,19 +115,22 @@ segments(dp$Brier_pre, y_coords, dp$Brier_post, y_coords, col = "gray75", lwd = 
 points(dp$Brier_pre, y_coords, col = col_pre, pch = 16, cex = 2)
 points(dp$Brier_post, y_coords, col = col_post, pch = 16, cex = 2)
 
+# Leyenda con fondo blanco para no cruzar líneas de grilla
 legend("topleft", legend = c("17/18 (Pre-VAR)", "18/19 (Post-VAR)", "Magnitud de Degradación"), 
-       col = c(col_pre, col_post, "gray75"), pch = c(16, 16, NA), lty = c(NA, NA, 1), lwd = c(NA, NA, 4), bty = "n")
+       col = c(col_pre, col_post, "gray75"), pch = c(16, 16, NA), lty = c(NA, NA, 1), lwd = c(NA, NA, 4), 
+       bg = "white", box.col = "gray80")
 dev.off()
 
-# 6. ESTRATEGIA GRÁFICA B: BARRAS DIVERGENTES (ECE PROMEDIO) -> Graficos_Globales
+# 6. GRÁFICO B: BARRAS DIVERGENTES (ECE PROMEDIO) - [CORREGIDO EJE X]
 # ------------------------------------------------------------------------------
 df <- delta_fiab[order(delta_fiab$Delta_ECE_Prom, decreasing = FALSE), ]
 col_div <- ifelse(df$Delta_ECE_Prom > 0, col_post, "#81b29a") 
+max_xlim <- max(df$Delta_ECE_Prom) * 1.15
 
 png(file.path(dir_graf_glob, "Grafico_B_Impacto_ECE_Divergente.png"), width = 1100, height = 650, res = 120)
-par(mar = c(5, 12, 4, 2), bg = "#fcfcfc")
+par(mar = c(5, 14, 4, 2), bg = "#fcfcfc") # Margen izquierdo ampliado a 14
 barplot(df$Delta_ECE_Prom, names.arg = df$Casa_Apuestas, horiz = TRUE, las = 2, 
-        col = col_div, border = NA, 
+        col = col_div, border = NA, xlim = c(0, max_xlim),
         main = "Pérdida de Calibración Estructural del Mercado\nCrecimiento Neto del Error Esperado de Calibración (Delta ECE)", 
         xlab = "Aumento Porcentual del Error (Delta)")
 grid(nx = NULL, ny = NA, col = "gray85", lty = 2)
@@ -127,8 +138,7 @@ barplot(df$Delta_ECE_Prom, names.arg = df$Casa_Apuestas, horiz = TRUE, las = 2, 
 abline(v = 0, lwd = 2, col = "black")
 dev.off()
 
-# 7. ESTRATEGIA GRÁFICA C: SUPERPOSICIÓN DE LA FRONTERA (EMPATE) -> Graficos_Globales
-# ------------------------------------------------------------------------------
+# FUNCIÓN AUXILIAR PARA CURVAS DE SUPERPOSICIÓN
 calc_b <- function(p, o) {
   b <- seq(0, 1, length.out = 11); idx <- cut(p, breaks = b, include.lowest = TRUE, labels = FALSE)
   df <- data.frame(Bin = 1:10, Esperado = NA, Observado = NA)
@@ -137,34 +147,67 @@ calc_b <- function(p, o) {
   return(na.omit(df))
 }
 
-p_pre <- base_1718$Promedio_Apertura_P_Empate_Pot; o_pre <- base_1718$Obs_Empate
-p_post <- base_1819$Promedio_Apertura_P_Empate_Pot; o_post <- base_1819$Obs_Empate
-
-curva_pre <- calc_b(p_pre, o_pre)
-curva_post <- calc_b(p_post, o_post)
+# 7. GRÁFICO C: SUPERPOSICIÓN DE LA FRONTERA (EMPATE)
+# ------------------------------------------------------------------------------
+p_pre_D <- base_1718$Promedio_Apertura_P_Empate_Pot; o_pre_D <- base_1718$Obs_Empate
+p_post_D <- base_1819$Promedio_Apertura_P_Empate_Pot; o_post_D <- base_1819$Obs_Empate
+curva_pre_D <- calc_b(p_pre_D, o_pre_D); curva_post_D <- calc_b(p_post_D, o_post_D)
 
 png(file.path(dir_graf_glob, "Grafico_C_Superposicion_Mercado_Empate.png"), width = 1100, height = 650, res = 120)
 par(mar = c(5, 5, 4, 2), bg = "#fcfcfc")
-
 plot(NULL, xlim = c(0, 0.45), ylim = c(0, 0.45), 
      xlab = "Probabilidad Asignada al Empate (Mercado Global)", ylab = "Frecuencia Empírica Observada",
      main = "Descalibración del Empate: Curva de Frontera del Mercado\n(Promedio Apertura Pre-VAR vs Post-VAR)", 
      cex.main = 1.3, cex.lab = 1.1)
-
 rect(par("usr")[1], par("usr")[3], par("usr")[2], par("usr")[4], col = "#f8f9fa", border = NA)
 grid(col = "#e9ecef", lty = 1, lwd = 1.5)
 abline(a = 0, b = 1, lty = 2, col = "#6c757d", lwd = 2)
-
-lines(curva_pre$Esperado, curva_pre$Observado, col = col_pre, lwd = 3, type = "b", pch = 16, cex = 1.6)
-lines(curva_post$Esperado, curva_post$Observado, col = col_post, lwd = 3, type = "b", pch = 17, cex = 1.6)
-
+lines(curva_pre_D$Esperado, curva_pre_D$Observado, col = col_pre, lwd = 3, type = "b", pch = 16, cex = 1.6)
+lines(curva_post_D$Esperado, curva_post_D$Observado, col = col_post, lwd = 3, type = "b", pch = 17, cex = 1.6)
 legend("topleft", legend = c("Mercado 17/18 (Pre-VAR)", "Mercado 18/19 (Post-VAR)", "Calibración Perfecta"),
-       col = c(col_pre, col_post, "#6c757d"), lty = c(1,1,2), pch = c(16,17,NA), lwd = 3, bty = "n", cex = 1.1)
+       col = c(col_pre, col_post, "#6c757d"), lty = c(1,1,2), pch = c(16,17,NA), lwd = 3, bg = "white", box.col = "gray80", cex = 1.1)
 dev.off()
 
-cat("\n========================================================================\n")
-cat(">> COMPARACIÓN FINALIZADA Y ORGANIZADA CON ÉXITO\n")
-cat("========================================================================\n")
-cat("Las matrices Delta se guardaron en: Tablas_CSV/\n")
-cat("Los gráficos comparativos (A, B y C) se guardaron en: Graficos_Globales/\n")
-cat("========================================================================\n")
+# 8. GRÁFICO D: SUPERPOSICIÓN DE LA FRONTERA (VICTORIA LOCAL)
+# ------------------------------------------------------------------------------
+p_pre_H <- base_1718$Promedio_Apertura_P_Local_Pot; o_pre_H <- base_1718$Obs_Local
+p_post_H <- base_1819$Promedio_Apertura_P_Local_Pot; o_post_H <- base_1819$Obs_Local
+curva_pre_H <- calc_b(p_pre_H, o_pre_H); curva_post_H <- calc_b(p_post_H, o_post_H)
+
+png(file.path(dir_graf_glob, "Grafico_D_Superposicion_Mercado_Local.png"), width = 1100, height = 650, res = 120)
+par(mar = c(5, 5, 4, 2), bg = "#fcfcfc")
+plot(NULL, xlim = c(0, 1), ylim = c(0, 1), 
+     xlab = "Probabilidad Asignada al Local (Mercado Global)", ylab = "Frecuencia Empírica Observada",
+     main = "Descalibración Victoria Local: Curva de Frontera del Mercado\n(Promedio Apertura Pre-VAR vs Post-VAR)", 
+     cex.main = 1.3, cex.lab = 1.1)
+rect(par("usr")[1], par("usr")[3], par("usr")[2], par("usr")[4], col = "#f8f9fa", border = NA)
+grid(col = "#e9ecef", lty = 1, lwd = 1.5)
+abline(a = 0, b = 1, lty = 2, col = "#6c757d", lwd = 2)
+lines(curva_pre_H$Esperado, curva_pre_H$Observado, col = col_pre, lwd = 3, type = "b", pch = 16, cex = 1.6)
+lines(curva_post_H$Esperado, curva_post_H$Observado, col = col_post, lwd = 3, type = "b", pch = 17, cex = 1.6)
+legend("topleft", legend = c("Mercado 17/18 (Pre-VAR)", "Mercado 18/19 (Post-VAR)", "Calibración Perfecta"),
+       col = c(col_pre, col_post, "#6c757d"), lty = c(1,1,2), pch = c(16,17,NA), lwd = 3, bg = "white", box.col = "gray80", cex = 1.1)
+dev.off()
+
+# 9. GRÁFICO E: SUPERPOSICIÓN DE LA FRONTERA (VICTORIA VISITANTE)
+# ------------------------------------------------------------------------------
+p_pre_A <- base_1718$Promedio_Apertura_P_Vis_Pot; o_pre_A <- base_1718$Obs_Vis
+p_post_A <- base_1819$Promedio_Apertura_P_Vis_Pot; o_post_A <- base_1819$Obs_Vis
+curva_pre_A <- calc_b(p_pre_A, o_pre_A); curva_post_A <- calc_b(p_post_A, o_post_A)
+
+png(file.path(dir_graf_glob, "Grafico_E_Superposicion_Mercado_Visitante.png"), width = 1100, height = 650, res = 120)
+par(mar = c(5, 5, 4, 2), bg = "#fcfcfc")
+plot(NULL, xlim = c(0, 1), ylim = c(0, 1), 
+     xlab = "Probabilidad Asignada al Visitante (Mercado Global)", ylab = "Frecuencia Empírica Observada",
+     main = "Descalibración Victoria Visitante: Curva de Frontera del Mercado\n(Promedio Apertura Pre-VAR vs Post-VAR)", 
+     cex.main = 1.3, cex.lab = 1.1)
+rect(par("usr")[1], par("usr")[3], par("usr")[2], par("usr")[4], col = "#f8f9fa", border = NA)
+grid(col = "#e9ecef", lty = 1, lwd = 1.5)
+abline(a = 0, b = 1, lty = 2, col = "#6c757d", lwd = 2)
+lines(curva_pre_A$Esperado, curva_pre_A$Observado, col = col_pre, lwd = 3, type = "b", pch = 16, cex = 1.6)
+lines(curva_post_A$Esperado, curva_post_A$Observado, col = col_post, lwd = 3, type = "b", pch = 17, cex = 1.6)
+legend("topleft", legend = c("Mercado 17/18 (Pre-VAR)", "Mercado 18/19 (Post-VAR)", "Calibración Perfecta"),
+       col = c(col_pre, col_post, "#6c757d"), lty = c(1,1,2), pch = c(16,17,NA), lwd = 3, bg = "white", box.col = "gray80", cex = 1.1)
+dev.off()
+
+cat("\n>> Comparación Finalizada. Los 5 gráficos se encuentran en Graficos_Globales/\n")
