@@ -1,0 +1,2990 @@
+---
+title: "Bitácora de Uso de Inteligencia Artificial"
+subtitle: "Proyecto 2: ¿Están bien calibradas las casas de apuestas?"
+author: "Camilo Henriquez, Mateo Valencia, Samuel Lopez y Valeria Gutierrez"
+date: "`r format(Sys.Date(), '%d de %B de %Y')`"
+output:
+  html_document:
+    theme: cosmo
+    toc: false
+    number_sections: false
+    df_print: paged
+---
+
+```{r setup-bitacora, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{css, echo=FALSE}
+body {
+  font-family: "Georgia", "Iowan Old Style", "Palatino Linotype", serif;
+  color: #2b2620;
+}
+
+h1, h2 {
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #1f2d3d;
+  border-bottom: 2px solid #c9a24b;
+  padding-bottom: 6px;
+}
+
+.bitacora-card {
+  background-color: #fbf9f4;
+  border-left: 6px solid #1f2d3d;
+  box-shadow: 0 2px 8px rgba(31, 45, 61, 0.12);
+  border-radius: 4px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+}
+
+.bitacora-card h4 {
+  margin-top: 0;
+  margin-bottom: 4px;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #1f2d3d;
+}
+
+.bitacora-meta {
+  font-size: 0.9em;
+  color: #6b6255;
+  margin-bottom: 10px;
+  font-style: italic;
+}
+
+.bitacora-field {
+  margin-bottom: 10px;
+}
+
+.bitacora-field-label {
+  font-weight: bold;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #a5771f;
+  display: block;
+  margin-bottom: 2px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.82em;
+}
+
+.bitacora-completar {
+  background-color: #fbeee7;
+  border: 1px dashed #b3492f;
+  color: #8c3a24;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-weight: bold;
+  display: inline-block;
+}
+
+pre.prompt-full {
+  white-space: pre-wrap;
+  background-color: #ffffff;
+  border: 1px solid #e3dcc9;
+  border-radius: 4px;
+  padding: 10px;
+  max-height: 500px;
+  overflow-y: auto;
+  font-family: "Consolas", "Menlo", monospace;
+}
+
+details > summary {
+  cursor: pointer;
+  color: #1f2d3d;
+  font-weight: bold;
+  margin-top: 6px;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.intercambio-titulo {
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 600;
+  color: #1f2d3d;
+  background-color: #f1ece0;
+  border-left: 4px solid #c9a24b;
+  border-radius: 3px;
+  padding: 7px 12px;
+  margin: 22px 0 12px 0;
+}
+
+.intercambio-num {
+  display: inline-block;
+  background-color: #1f2d3d;
+  color: #ffffff;
+  font-size: 0.75em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 2px 8px;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+.prompt-nota {
+  font-style: italic;
+  color: #6b6255;
+  margin-bottom: 6px;
+}
+
+.bitacora-card .bitacora-field + .intercambio-titulo:first-of-type {
+  margin-top: 16px;
+}
+
+.integridad-box {
+  background-color: #f3f0e6;
+  border-left: 6px solid #c9a24b;
+  box-shadow: 0 2px 8px rgba(31, 45, 61, 0.12);
+  border-radius: 4px;
+  padding: 20px 24px;
+}
+```
+
+# Lineamientos metodológicos
+
+Esta bitácora documenta el uso de un modelo de lenguaje (LLM) —**Gemini**— como
+herramienta de apoyo durante el desarrollo del Proyecto 2 del curso de
+Estadística Industrial ("¿Están bien calibradas las casas de apuestas?"),
+Universidad del Magdalena, semestre 2026-II, profesor Enrique J. De La Hoz
+Domínguez.
+
+Las Entradas 17 a 29 corresponden a una sesión posterior con un asistente
+de IA con capacidad de ejecutar código, dedicada al reporte de calibración
+autogenerado y a la organización del repositorio. Se documentan a partir
+del registro de interacciones generado al cierre de esa sesión (Entrada
+29): los prompts se transcriben tal como quedaron en ese registro, y los
+envíos de archivos se describen entre paréntesis.
+
+De acuerdo con la rúbrica del proyecto, la bitácora de uso de IA es el
+**entregable 6**, y debe llevar el campo de **verificación diligenciado en
+cada entrada**. Su ausencia, o la ausencia de verificación, se penaliza con
+−5 puntos. Además, la sección 8 del informe técnico ("Uso de IA") exige una
+síntesis de media página con esta bitácora completa en anexo.
+
+Como en la bitácora del proyecto anterior, cada entrada documenta el
+objetivo perseguido, el prompt exacto utilizado, la respuesta obtenida, el
+mecanismo de **verificación** aplicado sobre dicha respuesta (ejecución del
+código, revisión de resultados en consola, contraste contra la
+documentación oficial de la fuente), y el resultado final (aceptación,
+corrección o descarte).
+
+Dado el carácter sensible del tema (apuestas y juego responsable, criterio
+E de la rúbrica), ninguna entrada de esta bitácora describe ni sugiere
+estrategias de apuesta: el objeto de todas las interacciones es
+estrictamente metodológico y retrospectivo.
+
+Las entradas están organizadas por fase del proyecto y numeradas en el
+orden lógico en que ocurrieron (no necesariamente el orden de envío a esta
+conversación).
+
+> **Nota sobre la verificación:** cuando no se conservó la salida de consola
+> de una ejecución, la verificación registrada corresponde a la revisión del
+> código y de la respuesta de la IA contra el texto de la rúbrica y la
+> documentación de la fuente (<code>notes.txt</code>). Las fechas se
+> registran por semana del cronograma del proyecto.
+
+---
+
+# Bitácora de interacciones
+
+## Fase: Metodología y Planeación
+
+<div class="bitacora-card">
+<h4>Entrada 1 — Establecimiento de la metodología de trabajo con la IA</h4>
+<div class="bitacora-meta">Fecha: semana 5 del cronograma (lanzamiento, 31 de agosto de 2026) &nbsp;|&nbsp; Etapa: Previa a la Fase 1 (Lanzamiento) — definición de reglas de colaboración (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Establecer, antes de comenzar cualquier actividad técnica, las reglas de
+colaboración con la IA para todo el proyecto: que la rúbrica funcione como
+filtro de alcance de cada actividad, que el trabajo se construya de forma
+progresiva y verificable por etapas, y que la IA diferencie explícitamente
+entre exigencias obligatorias del profesor y sugerencias propias.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Voy a comenzar a desarrollar el segundo proyecto de mi curso y quiero que me acompañes durante todo el proceso como un tutor académico y metodológico...</pre>
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+Voy a comenzar a desarrollar el segundo proyecto de mi curso y quiero que me acompañes durante todo el proceso como un tutor académico y metodológico.
+Antes de comenzar cualquier actividad, te voy a proporcionar la rúbrica completa entregada por el profesor. Esta rúbrica será nuestra guía principal y documento de referencia durante todo el desarrollo del proyecto.
+
+1. Análisis inicial de la rúbrica
+Cuando te envíe la rúbrica, tu primera tarea será: leerla completamente y con atención; analizarla punto por punto; identificar todos los criterios de evaluación, no solamente los entregables principales; identificar qué productos, actividades, procedimientos y evidencias exige; identificar las restricciones, condiciones, requisitos específicos y aspectos que el profesor exige explícitamente; identificar qué elementos tienen mayor importancia dentro de la evaluación; detectar posibles relaciones entre los diferentes criterios; organizar la información de manera clara para que podamos utilizarla como guía durante todo el proyecto. No quiero que te limites a hacer un resumen general. Si la rúbrica contiene instrucciones ambiguas, contradictorias o que puedan interpretarse de diferentes maneras, debes señalármelo en lugar de asumir una interpretación sin avisarme.
+
+2. La rúbrica será nuestra guía de trabajo
+Cada vez que te pida desarrollar, modificar, analizar o agregar algo, debes comprobar si esa actividad está relacionada directamente con la rúbrica, ayuda a cumplir alguno de sus criterios, es necesaria para un requisito explícito, es útil pero no exigida, o está completamente fuera de alcance. Si te pido algo que no esté contemplado en la rúbrica, debes decírmelo claramente antes de desarrollarlo.
+
+3. Construcción progresiva del proyecto
+No quiero realizar todo el proyecto de una sola vez. Para cada etapa debes indicarme: qué debemos hacer, por qué debemos hacerlo, qué criterio de la rúbrica estamos cumpliendo, qué información necesitamos, qué producto o evidencia debemos obtener, qué errores debemos evitar, y cómo podemos comprobar que el requisito quedó cumplido.
+
+4. Guía metodológica inicial
+Después de analizar completamente la rúbrica, quiero que construyas una guía metodológica paso a paso: actividades necesarias, orden recomendado de trabajo, requisitos específicos, restricciones, evidencias, criterios, dependencias entre actividades, puntos de control, posibles errores, y qué información debe estar lista antes de cada etapa.
+
+5. Forma de trabajar durante el proyecto
+Cuando des una recomendación importante, indícame qué parte de la rúbrica la justifica. Si posteriormente te proporciono avances, evalúalos contra la rúbrica y señálame qué está correcto, qué falta, qué debe corregirse y con qué requisito se relaciona. No inventes requisitos que el profesor no haya establecido.
+
+6. Memoria de la rúbrica
+Quiero que la rúbrica quede establecida como marco de referencia durante nuestra conversación y, si es posible, para futuras conversaciones relacionadas. Sin embargo, no debes asumir que recuerdas información que no esté disponible.
+
+7. Primera tarea
+Por ahora no empieces a desarrollar el proyecto ni hagas suposiciones sobre su contenido. Primero necesito enviarte la rúbrica completa. Cuando recibas este mensaje, simplemente confirma que entendiste la metodología de trabajo y pídeme que te envíe la rúbrica completa.
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini confirmó el rol de tutor metodológico y las reglas acordadas (la
+rúbrica como filtro absoluto, construcción escalonada, diferenciación
+explícita entre exigencias obligatorias y buenas prácticas sugeridas,
+detección de ambigüedades), y solicitó el envío de la rúbrica completa sin
+adelantar ningún contenido del proyecto.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se comprobó que la respuesta de Gemini replicara las reglas solicitadas
+(rúbrica como filtro de alcance, avance por etapas, diferenciación entre
+exigencias del profesor y sugerencias propias, aviso de ambigüedades) y
+que no adelantara contenido del proyecto antes de recibir la rúbrica, como
+se le pidió en el punto 7 del prompt.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: quedaron establecidas las reglas de colaboración que rigen el
+resto del proyecto (uso de la rúbrica como filtro de alcance, avance por
+etapas verificables).
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 2 — Análisis crítico de la rúbrica y construcción de la guía metodológica</h4>
+<div class="bitacora-meta">Fecha: semana 5 del cronograma (lanzamiento, 31 de agosto de 2026) &nbsp;|&nbsp; Etapa: Previa a la Fase 1 (Lanzamiento) — análisis exhaustivo de la rúbrica y plan de trabajo en 5 fases (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Que la IA analizara la rúbrica completa del profesor identificando
+restricciones, penalizaciones, trampas metodológicas explícitas y
+ambigüedades a resolver por el equipo, y que a partir de ese análisis
+construyera una guía metodológica de trabajo por fases, alineada con las
+fechas de entrega (Avance 1, Avance 2, Entrega final).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+Envío del texto íntegro de la rúbrica del profesor ("¿Están bien
+calibradas las casas de apuestas?", Proyecto 2, Estadística Industrial,
+Universidad del Magdalena, semestre 2026-II), incluyendo contexto,
+fuentes de datos, fases del trabajo, tratamiento del margen, evaluación
+de la calibración, trampas metodológicas, consideraciones éticas,
+entregables, estructura del informe, rúbrica de evaluación (criterios A–E),
+cronograma y lista de verificación.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+[Texto íntegro de la rúbrica "¿Están bien calibradas las casas de apuestas?" — Proyecto 2, Estadística Industrial, Universidad del Magdalena, semestre 2026-II, profesor Enrique J. De La Hoz Domínguez. Incluye: contexto y propósito del proyecto (evaluación de calibración de pronósticos probabilísticos); resultados de aprendizaje evaluados; el desafío (alcance libre por equipo: ligas, temporadas, operadores; preguntas de investigación viables); encuadre del proyecto (ejercicio retrospectivo, no estrategia de apuestas; explicación del margen/overround y su implicación de valor esperado negativo); fuentes de datos (Football-Data.co.uk como fuente principal, con su nomenclatura de columnas, cuotas de apertura/cierre, cobertura desigual entre temporadas, y la advertencia de calidad de datos de Pinnacle posterior al 23 de julio de 2025; fuentes complementarias opcionales); las 6 fases del trabajo (definición de alcance y construcción de la base, de cuotas a probabilidades y tratamiento del margen, evaluación de la calibración, análisis de desviaciones sistemáticas, automatización del reporte, informe y sustentación); el tratamiento del margen en detalle (conversión básica 1/o, el problema de repartir el margen, los 4 métodos: normalización multiplicativa, normalización aditiva, método de Shin, método de potencia, y el requisito de aplicar al menos 2 métodos con análisis de sensibilidad); la evaluación de la calibración (curva de calibración con sus 3 decisiones a justificar, reglas de puntuación como Brier score y RPS, pruebas de bondad de ajuste con la trampa del tamaño de muestra, el sesgo favorito-longshot); las 5 trampas metodológicas frecuentes (comparar probabilidades brutas sin remover el margen, tratar las casas como muestras independientes, ignorar la dependencia entre partidos, comparaciones múltiples sin control, mezclar poblaciones con tasas base distintas); juego responsable y consideraciones éticas; los 7 entregables; la estructura del informe técnico en 8 secciones; la estructura de la sustentación oral; la rúbrica de evaluación con 5 criterios (A. Evaluación de calibración e inferencia, 25 pts; B. Sustentación y dominio técnico, 25 pts; C. Tratamiento probabilístico de las cuotas, 20 pts; D. Informe técnico y reproducibilidad, 20 pts; E. Encuadre ético y juego responsable, 10 pts), niveles de desempeño, penalizaciones específicas (−15, −10, −10, −5, −5 puntos según el caso) y bonificaciones (hasta 8 puntos); el cronograma con fechas inamovibles (31 de agosto lanzamiento, 7 de septiembre Avance 1, 14 de septiembre Avance 2, 21 de septiembre entrega final y sustentación); recursos y herramientas recomendadas (R con data.table/dplyr/ggplot2/binom/ResourceSelection, o Python); y la lista de verificación final de 24 puntos antes de entregar.
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini entregó una tabla de restricciones/trampas de la rúbrica con su
+penalización y la estrategia para evitarlas (enfoque de recomendación,
+probabilidades brutas, p-valor sin magnitud, falsa independencia, trampa
+de Pinnacle), señaló 3 decisiones metodológicas que la rúbrica deja
+abiertas (esquema de agrupamiento, tratamiento de los 3 resultados,
+métodos de remoción del margen), y construyó una guía de 5 fases
+(Ingeniería de Datos y Cobertura; Modelación del Margen; Evaluación Visual
+y Puntuación; Inferencia Estadística y Análisis de Desviaciones;
+Automatización y Ensamblaje Final) cada una con actividad, requisito
+explícito de rúbrica, control de calidad y entregable interno, cerrando
+con una pregunta sobre el alcance (ligas, temporadas, casas) para iniciar
+la Fase 1.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+He analizado a profundidad la rúbrica de Estadística Industrial. El profesor De La Hoz ha diseñado un proyecto de alta exigencia técnica que evalúa la capacidad de auditar modelos predictivos, lidiar con datos dependientes y no dejarse engañar por muestras masivas.
+
+Análisis Crítico y Restricciones del Proyecto:
+- Enfoque de recomendación: −15 puntos, prohibido sugerir estrategias de apuesta; estrategia: lenguaje estrictamente retrospectivo y auditable, medir ineficiencias del mercado, no oportunidades de ganancia.
+- Probabilidades brutas: −10 puntos, prohibido comparar cuotas directas contra frecuencias reales; estrategia: módulo de limpieza que primero calcule el margen, luego lo elimine con ≥2 métodos, y solo entonces permita la comparación.
+- P-valor sin magnitud: −5 puntos, con N masivo todo dará "significativo"; estrategia: reportar siempre la desviación media en puntos porcentuales junto a cada prueba.
+- Falsa independencia: invalida la inferencia si se asume que cuotas de distintas casas o partidos de la misma jornada son independientes; estrategia: pruebas para datos apareados (medidas repetidas).
+- Trampa de Pinnacle (2025): invalida comparaciones si no se filtran sus datos post-23 julio 2025.
+
+Decisiones metodológicas abiertas: esquema de agrupamiento (igual ancho vs. igual frecuencia); tratamiento de resultados (Local/Empate/Visitante por separado o consolidados); métodos de remoción de margen (normalización multiplicativa obligatoria por simplicidad; Shin o Potencia otorgan +3 puntos).
+
+Guía Metodológica y Plan de Trabajo (5 fases incrementales):
+Fase 1 (Avance 1, Sept 7): Ingeniería de Datos y Cobertura — descarga, consolidación y validación desde Football-Data.co.uk; filtrar cuotas ≤1 y manejar advertencia de Pinnacle; control de fechas con as.Date(); entregable: CSV depurado + inventario de cobertura.
+Fase 2 (Avance 1, Sept 7): Modelación del Margen — cuotas a probabilidades brutas (1/o) y cálculo del overround; selección de 2 métodos de remoción (normalización multiplicativa + Potencia o Shin); control de calidad: la suma de probabilidades ajustadas debe dar 1.0000; entregable: base analítica con probabilidades ajustadas y análisis de distribución del margen.
+Fase 3 (Avance 2, Sept 14): Evaluación Visual y Puntuación — curvas de calibración con intervalos de Wilson; Brier Score contra líneas base; oportunidad de bonificación con RPS; punto de control: sensibilidad al número de intervalos.
+Fase 4 (post Sept 14): Inferencia Estadística y Análisis de Desviaciones — pruebas de bondad de ajuste (Hosmer-Lemeshow) y sesgo favorito-longshot; control de comparaciones múltiples; análisis de sensibilidad entre métodos de remoción de margen.
+Fase 5 (meta Sept 21): Automatización Quarto/Rmd y Ensamblaje Final — informe técnico (10-14 págs.) integrando el flujo de código; el reporte debe regenerarse automáticamente al cambiar un parámetro; evidencias finales: repositorio, bitácora de IA, CSV final y PDF.
+
+¿Qué alcance (ligas, temporadas y casas de apuestas) tienes en mente para comenzar la Fase 1, o prefieres que evaluemos opciones basadas en la disponibilidad histórica de Football-Data?
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se contrastó la tabla y la guía contra el texto de la rúbrica. Las trampas
+señaladas (recomendación de apuesta, probabilidades brutas, valor p sin
+magnitud, falsa independencia, Pinnacle) y sus penalizaciones coinciden
+con las secciones 4.1, 8 y 13.2. Se detectaron cuatro diferencias: (1) la
+guía organiza el trabajo en 5 fases y la rúbrica en 6 (la Fase 6, informe
+y sustentación, quedó fusionada en la Fase 5); (2) Gemini presentó la
+normalización multiplicativa como "obligatoria", pero la rúbrica solo exige
+al menos dos métodos, sin imponer cuál; (3) la tabla omite dos
+penalizaciones de la sección 13.2: afirmar rentabilidad esperada positiva
+(−10) y bitácora de IA ausente o sin verificación (−5); (4) la guía no
+menciona la bonificación por descomposición de Murphy (hasta 2 puntos).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptada como plan general de trabajo, incorporando las cuatro precisiones
+anteriores. El trabajo posterior siguió esa secuencia: alcance, auditoría y
+construcción de la base (Entradas 3–12) y evaluación de la calibración por
+ítems 7.1 a 7.4 (Entradas 13–16).
+</div>
+</div>
+
+## Fase: Selección y Documentación de Variables
+
+<div class="bitacora-card">
+<h4>Entrada 3 — Traducción y organización del diccionario de variables al español</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — comprensión del diccionario oficial antes de definir el alcance de variables (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Traducir y organizar al español, en categorías lógicas, el diccionario de
+variables de Football-Data.co.uk ya enviado (Entrada 12), para facilitar
+la posterior decisión de qué variables mantener en el alcance del
+proyecto.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">ahora quiero que me des el diccionario de variables organizado y en español para mi, es decir organizame las 64 variables</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini organizó el diccionario en 6 categorías (información general del
+partido, resultados, estadísticas físicas, cuotas de mercado 1X2 —con la
+distinción entre apertura y cierre marcada por la "C"—, cuotas de
+totales Over/Under 2.5 y cuotas de hándicap asiático), tradujo cada
+variable, y cerró relacionando la organización con los criterios A y C de
+la rúbrica: quedarse con los grupos 1 y 2, descartar el grupo 3, elegir
+casas del grupo 4 según apertura/cierre, y descartar los grupos 5 y 6.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+1. Información General del Partido (Metadatos): Div (división de la liga), Date (fecha), Time (hora de inicio), HomeTeam, AwayTeam, Referee, Attendance (asistencia de público).
+
+2. Resultados (Goles y Desenlace): FTHG/HG (goles local a tiempo completo), FTAG/AG (goles visitante a tiempo completo), FTR/Res (resultado final: H/D/A), HTHG, HTAG, HTR (equivalentes a medio tiempo).
+
+3. Estadísticas Físicas del Partido (variables de control, no cuotas): HS/AS (tiros totales), HST/AST (tiros al arco), HHW/AHW (tiros al palo), HC/AC (córners), HF/AF (faltas), HFKC/AFKC (tiros libres concedidos), HO/AO (fueras de juego), HY/AY (tarjetas amarillas), HR/AR (tarjetas rojas), HBP/ABP (puntos por tarjetas).
+
+4. Cuotas de Mercado 1X2 (la materia prima del proyecto): se construyen como Acrónimo de la casa + Resultado (H/D/A); una "C" en medio indica cuota de cierre (ej. B365CH). Agregados del mercado: MaxH/D/A, AvgH/D/A. Principales casas con ejemplo 'H': B365H (Bet365), PSH/PH (Pinnacle, con alerta de exclusión post julio-2025), WHH (William Hill), LBH (Ladbrokes), BFH (Betfair), BFEH (Betfair Exchange), IWH (Interwetten), PPH (Paddy Power); otros acrónimos: 1XB, BFD, BMGM, BV/VC, BW, CL, GB, SK, SO, SB, SJ, SY.
+
+5. Cuotas de Totales (Más/Menos 2.5 goles) — opcional: Max>2.5/Avg>2.5, B365>2.5/P>2.5, identificadas con >2.5 y <2.5.
+
+6. Cuotas de Hándicap Asiático — opcional: AHh (tamaño del hándicap del local), MaxAHH/AvgAHH, B365AHH/PAHH.
+
+Para el proyecto: la Fase 1 de limpieza debe quedarse con los grupos 1 y 2 (metadatos y FTR), descartar el grupo 3 completo, elegir del grupo 4 las casas a analizar decidiendo entre apertura/cierre/ambas, y descartar los grupos 5 y 6 salvo que se amplíe el alcance.
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se contrastó la clasificación y la traducción contra el texto de
+<code>notes.txt</code> (Entrada 12): las abreviaturas de las casas
+coinciden con la clave oficial (p. ej. BV = BetVictor, VC = VC Bet,
+BFE = Betfair Exchange, PS = Pinnacle), y la distinción entre cuotas de
+apertura y de cierre por la "C" adicional es la que describen la fuente y
+la sección 4.1 de la rúbrica.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: el orden y la categorización propuestos gustaron y se usaron
+como base para el trabajo posterior de selección de variables (Entradas
+5 y 6).
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 4 — Explicación de la discrepancia entre el diccionario maestro y las variables reales del archivo</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — verificación de cobertura desigual entre temporadas (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Entender por qué el script de auditoría detectó 64 variables en el
+archivo real de trabajo, mientras que el diccionario traducido en la
+Entrada 3 listaba 77 ítems (más de 130 columnas si se cuentan H/D/A por
+separado).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">porque en el control salen 64 variables y tu tienes 77 ?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini explicó dos razones: el diccionario de Football-Data es un
+"diccionario maestro" histórico (1993–2026) que incluye todas las
+variables que han existido alguna vez, mientras que un archivo CSV
+específico corresponde a una liga y temporada puntuales; y que las casas
+de apuestas entran y salen del mercado (ej. Blue Square, Stan James y
+Sporting Odds ya no existen), y variables como el hándicap asiático solo
+existen desde 2019. Citó textualmente la advertencia de la sección 4.1 de
+la rúbrica sobre "cobertura desigual entre temporadas" y "no asuman que
+una columna existe en toda la serie", y concluyó que el código de la Fase
+1 debe leer qué columnas están presentes en cada archivo en vez de
+asumirlas fijas. Cerró preguntando qué casas de apuestas elegir para el
+alcance del proyecto.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se contrastó la explicación directamente contra el texto de la sección
+4.1 de la rúbrica, confirmando que la advertencia sobre cobertura
+desigual entre temporadas y operadores está citada de forma textual y
+correcta.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: quedó claro que el script debe verificar dinámicamente qué
+columnas existen en cada archivo, en vez de asumir una lista fija — este
+principio se aplicó luego en el script de extracción dinámica (Entrada
+8).
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 5 — Definición consensuada de las 25 variables indispensables según la rúbrica</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — acuerdo de alcance de variables antes de programar (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Definir, releyendo la rúbrica y sin escribir todavía ningún código, cuáles
+25 variables del diccionario eran indispensables para cumplir los
+criterios de evaluación del proyecto.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">no hagamos codigos aun, pongamonos deacuerdo, vuelve a leer la rubrica del profesor y segun esa rubrica dime que 25 variables crees indispensables mantener</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini razonó que el proyecto audita pronósticos ya hechos (no predice
+partidos con estadísticas), por lo que descartó estadísticas físicas y
+mercados secundarios, y propuso 25 variables en 4 bloques: (1)
+identificación y "verdad terrestre" — Div, Date, HomeTeam, AwayTeam,
+FTHG, FTAG, FTR; (2) consenso del mercado como línea base — AvgH, AvgD,
+AvgA; (3) 4 operadores a evaluar (Pinnacle, Bet365, William Hill,
+Betvictor) con sus 3 columnas H/D/A cada uno — 12 variables; (4) cuotas
+de cierre de Bet365 (B365CH/CD/CA) para ganar la bonificación de +1 punto
+por comparar apertura vs. cierre. Justificó la inclusión de Pinnacle pese
+a la advertencia de la rúbrica como forma de demostrar que se sabe tratar
+su anomalía, y cerró preguntando si el usuario estaba de acuerdo con la
+selección.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se contrastó la propuesta contra la rúbrica: la bonificación por comparar
+apertura y cierre (+1 punto, sección 13.3) está bien citada; incluir
+Pinnacle es admisible solo si se trata aparte con justificación (sección
+4.1), condición que la propuesta menciona; y la exclusión de estadísticas
+físicas es coherente con que el proyecto audita cuotas, no predice
+partidos.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptada como base, pero no como selección final. En el script de la
+Entrada 8 el alcance pasó a 28 variables (según el código: Ladbrokes e
+Interwetten en lugar de Betvictor, junto a Bet365, Pinnacle y William
+Hill). El alcance definitivo del proyecto (LaLiga, temporadas 2017/18 y
+2018/19, 6 casas) se fijó más adelante y se describe en la Entrada 17.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 6 — Selección definitiva de variables para la temporada 2025/2026 con base en la tabla de completitud</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — cierre de la selección de alcance de variables, tras detectar el problema de cobertura de la Entrada 10 (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+A partir de una tabla real de completitud de variables para la temporada
+2025/2026 (variable, tipo, datos faltantes, porcentaje completo), decidir
+el conjunto definitivo de variables a extraer, resolviendo el problema de
+cobertura desigual detectado en la Entrada 10.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+Envío de una tabla con 106 variables de la temporada 2025/2026,
+clasificadas como "Metadato/Estadística" o "Cuota/Mercado", con su número
+de datos faltantes y porcentaje de completitud, solicitando organizarlas
+y recomendar cuáles elegir según la rúbrica (sin generar código todavía).
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+para la temporada 2025/2026 estas son las variables, organizalas y dime cual crees que debamos elegir para cumplir con la rubrica del profesor: (no hagas codigos aun)
+
+[Tabla de 106 variables de la temporada 2025/2026 con columnas Variable, Tipo (Metadato/Estadística o Cuota/Mercado), Datos_Faltantes y Porcentaje_Completo. Entre los hallazgos más relevantes de la tabla: los metadatos y resultados (Div, Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, además de estadísticas físicas como AC, AF, AR, AS, AST, HC, HF, HR, HS, HST, HTAG, HTHG, HTR, HY, AY, Time) tienen 100% de completitud; los promedios y máximos de mercado (AvgH/D/A, AvgCH/D/A, MaxH/D/A, MaxCH/D/A) también tienen 100%; Bet365 (B365H/D/A y B365CH/D/A, incluyendo mercados de más/menos 2.5 goles y hándicap asiático) tiene 100%; Bwin (BWH/D/A) 99.7%; BetMGM (BMGMH/D/A) 99.5%; Betvictor (BVH/D/A) 99.5%; Betfred (BFDH/D/A) 99.7%; Betfair Exchange (BFEH/D/A y derivados) 92.1%; Ladbrokes (LBH/D/A) 76.6%; Coral (CLH/D/A) 74.2%; y las variables de Pinnacle (PSH/D/A, PSCH/D/A, PAHH/A, P.2.5) se desploman a 49.5–49.7% de completitud.]
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini señaló que la caída de Pinnacle al 49.7 % de completitud confirma
+empíricamente la advertencia de la rúbrica sobre su falla de recolección
+post julio-2025, y que casas como Ladbrokes (76.6 %) y Coral (74.2 %)
+introducirían sesgo si se usaran. Propuso una selección final de 31
+columnas: variables indispensables (Div, Date, HomeTeam, AwayTeam, FTHG,
+FTAG, FTR), líneas base de apertura y cierre (AvgH/D/A, AvgCH/D/A), y 4
+operadores con cobertura ≥99.5% (Bet365 con apertura y cierre para ganar
+la bonificación, Bwin, BetMGM, Betvictor), más Pinnacle incluida
+deliberadamente pese a su baja cobertura para documentar y justificar su
+exclusión del análisis general en el informe. Descartó explícitamente los
+mercados secundarios (Over/Under, hándicap asiático) y las casas con
+cobertura desigual (Ladbrokes, Coral, Betfair Exchange), y cerró
+preguntando si el usuario estaba de acuerdo con esta selección definitiva.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se contrastaron los porcentajes de completitud reportados por Gemini
+directamente contra los valores de la tabla real entregada (ej. Pinnacle
+49.5–49.7 %, Ladbrokes 76.6 %, Coral 74.2 %), confirmando que la lectura
+de la tabla fue correcta.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+No quedó como alcance final. El análisis de completitud sirvió para
+constatar con datos reales la falla de Pinnacle posterior a julio de 2025
+(material para la sección de Datos del informe), pero el equipo fijó
+finalmente el alcance en las temporadas 2017/18 y 2018/19 de LaLiga, con 6
+casas, para estudiar la introducción del VAR (Entradas 17 y 22). Al ser
+temporadas anteriores a 2025, la advertencia sobre Pinnacle no afecta el
+análisis, y Pinnacle es la casa que aporta las cuotas de cierre.
+</div>
+</div>
+
+## Fase: Arquitectura
+
+<div class="bitacora-card">
+<h4>Entrada 7 — Construcción inicial de la base de datos (descarga y consolidación)</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — Ingeniería de Datos y Cobertura (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Construir el primer script en R que descargara directamente los archivos
+CSV de Football-Data.co.uk, unificara las tablas de las ligas y temporadas
+elegidas, y aplicara los filtros de limpieza obligatorios de la rúbrica
+(fechas explícitas en formato dd/mm/aaaa, exclusión de cuotas de Pinnacle
+posteriores al 23 de julio de 2025).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">ok, empecemos construyendo nuestra base de datos, Todo el trabajo sera hecho en Rstudio, asi que los codigos que necesite deben ser en ese lenguaje</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Script en R que define parámetros de alcance (temporadas 2324/2425/2526,
+ligas E0 e SP1 como ejemplo), una función <code>procesar_datos()</code>
+que descarga cada combinación liga-temporada con <code>tryCatch()</code>,
+selecciona columnas estructurales y cuotas de 3 casas de ejemplo, lee la
+fecha explícitamente con <code>as.Date()</code> probando dos formatos,
+aplica la exclusión de Pinnacle posterior al 23 de julio de 2025, filtra
+cuotas ≤ 1, y arma con <code>lapply()</code> + <code>bind_rows()</code>
+tanto la base analítica como un inventario de cobertura por división y
+temporada.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+# Cargar librerías necesarias
+library(dplyr)
+
+# 1. Parámetros del alcance (Puedes modificar estas ligas y temporadas)
+temporadas <- c("2324", "2425", "2526") # Últimas tres temporadas
+ligas <- c("E0", "SP1") # E0: Inglaterra (Premier), SP1: España (La Liga)
+
+# 2. Función para descargar y limpiar un archivo específico
+procesar_datos <- function(liga, temporada) {
+  url <- sprintf("https://www.football-data.co.uk/mmz4281/%s/%s.csv", temporada, liga)
+
+  datos <- tryCatch(
+    read.csv(url, stringsAsFactors = FALSE),
+    error = function(e) return(NULL)
+  )
+
+  if (is.null(datos) || nrow(datos) == 0) return(NULL)
+
+  cols_necesarias <- c("Div", "Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR",
+                       "B365H", "B365D", "B365A",
+                       "PSH", "PSD", "PSA",
+                       "WHH", "WHD", "WHA")
+
+  cols_presentes <- intersect(cols_necesarias, names(datos))
+  datos <- datos[, cols_presentes]
+
+  # REQUISITO DE RÚBRICA: Lectura explícita de fechas
+  datos$Date <- as.Date(datos$Date, tryFormats = c("%d/%m/%Y", "%d/%m/%y"))
+  datos <- datos[!is.na(datos$Date), ]
+
+  # REQUISITO DE RÚBRICA: Advertencia de Pinnacle (Post 23 de julio de 2025)
+  if (any(grepl("PS", names(datos)))) {
+    datos <- datos %>%
+      mutate(
+        PSH = ifelse(Date > as.Date("2025-07-23"), NA, PSH),
+        PSD = ifelse(Date > as.Date("2025-07-23"), NA, PSD),
+        PSA = ifelse(Date > as.Date("2025-07-23"), NA, PSA)
+      )
+  }
+
+  # REQUISITO DE RÚBRICA: Cuotas imposibles (<= 1)
+  cols_cuotas <- grep("H$|D$|A$", names(datos), value = TRUE)
+  cols_cuotas <- cols_cuotas[!cols_cuotas %in% c("FTHG", "FTAG", "HomeTeam", "AwayTeam")]
+
+  datos[, cols_cuotas] <- lapply(datos[, cols_cuotas], function(x) {
+    x <- suppressWarnings(as.numeric(x))
+    ifelse(!is.na(x) & x <= 1, NA, x)
+  })
+
+  datos$Temporada <- temporada
+  return(datos)
+}
+
+# 3. Aplicar la función iterativamente a nuestro alcance
+combinaciones <- expand.grid(liga = ligas, temporada = temporadas, stringsAsFactors = FALSE)
+lista_datos <- lapply(1:nrow(combinaciones), function(i) {
+  procesar_datos(combinaciones$liga[i], combinaciones$temporada[i])
+})
+
+base_analitica <- bind_rows(lista_datos)
+
+# 4. Crear el Inventario de Cobertura (Requisito explícito)
+inventario_cobertura <- base_analitica %>%
+  group_by(Div, Temporada) %>%
+  summarise(
+    Partidos_Totales = n(),
+    Con_Cuotas_Bet365 = sum(!is.na(B365H)),
+    Con_Cuotas_Pinnacle = sum(!is.na(PSH)),
+    Con_Cuotas_WilliamHill = sum(!is.na(WHH)),
+    .groups = 'drop'
+  )
+
+print(inventario_cobertura)
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Revisión del código contra los requisitos de la Fase 1 de la rúbrica: lee
+la fecha explícitamente en dd/mm/aaaa (<code>as.Date()</code> con
+<code>%d/%m/%Y</code> y <code>%d/%m/%y</code>), anula Pinnacle después
+del 23 de julio de 2025, convierte en NA las cuotas ≤ 1 y construye un
+inventario de cobertura por división y temporada. Se identificó que las
+ligas (E0, SP1), las temporadas (2324–2526) y las casas (Bet365, Pinnacle,
+William Hill) eran valores de ejemplo propuestos por Gemini, no el alcance
+definido por el equipo.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Usado como referencia de estructura, no como script definitivo: el
+alcance de variables se definió en las Entradas 5 y 6, y la base de
+trabajo se construyó con los scripts propios del equipo ("control",
+"limpieza" y "excedentes"; ver Entrada 13).
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 8 — Script dinámico y replicable de extracción de variables</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — construcción del script de filtrado de variables a partir del alcance acordado (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Construir un script de R que leyera la ruta de la base original y se
+quedara únicamente con las variables del alcance acordado (28 variables,
+según lo indicado en el prompt), diseñado para ser reutilizable: que
+permitiera agregar o quitar variables fácilmente y funcionara con
+distintos archivos/temporadas sin romperse si faltaba alguna columna.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">ok  una vez tenemos las 28 variables, dame un codigo que lea la ruta de acceso de la base original y solo se quede con las 28 variables, recuerda que quiero que cada codigo sea replicabble para otras bases de datos y si quiero poder por ejemplo añadir o quitaar variables, no quiero un codigo estatico sino uno que pueda servirme para usar mas de una vez.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Script con una sección de configuración al inicio (vector
+<code>variables_deseadas</code>, editable sin tocar el resto del código)
+y un filtrado seguro basado en <code>intersect()</code> /
+<code>setdiff()</code>: extrae solo las columnas del alcance que
+realmente existan en el archivo, reporta cuáles faltaron sin detener la
+ejecución (en vez de arrojar un error, como ocurriría con un filtrado
+"quemado"), y deja el resultado en un objeto <code>base_filtrada</code>.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+# ==============================================================================
+# SCRIPT DE EXTRACCIÓN Y FILTRADO DINÁMICO (FASE 1)
+# ==============================================================================
+
+# 1. CONFIGURACIÓN DEL ALCANCE (Modifica esta lista para añadir o quitar variables)
+variables_deseadas <- c(
+  # Bloque 1: Identificación y Verdad Terrestre
+  "Div", "Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR",
+
+  # Bloque 2: Consenso del Mercado (Línea base)
+  "AvgH", "AvgD", "AvgA",
+
+  # Bloque 3: Las 5 Grandes Casas de Apuestas
+  "B365H", "B365D", "B365A",  # Bet365
+  "PSH", "PSD", "PSA",        # Pinnacle
+  "WHH", "WHD", "WHA",        # William Hill
+  "LBH", "LBD", "LBA",        # Ladbrokes
+  "IWH", "IWD", "IWA",        # Interwetten
+
+  # Bloque 4: Cuotas de Cierre (Bonificación)
+  "B365CH", "B365CD", "B365CA"
+)
+
+# 2. LECTURA DE LA BASE DE DATOS
+ruta_cruda <- "PEGA_AQUÍ_LA_RUTA"
+ruta <- gsub("\\\\", "/", ruta_cruda)
+ruta <- gsub("\"", "", ruta)
+datos_crudos <- read.csv(ruta, stringsAsFactors = FALSE)
+
+# 3. FILTRADO INTELIGENTE (Seguro contra columnas faltantes en temporadas antiguas)
+columnas_presentes <- intersect(variables_deseadas, names(datos_crudos))
+columnas_ausentes  <- setdiff(variables_deseadas, names(datos_crudos))
+
+base_filtrada <- datos_crudos[, columnas_presentes, drop = FALSE]
+
+# 4. REPORTE DE EJECUCIÓN
+cat("\n========================================================================\n")
+cat("                  REPORTE DE EXTRACCIÓN DE VARIABLES                    \n")
+cat("========================================================================\n\n")
+
+cat(">> RESUMEN DE FILTRADO:\n")
+cat("Columnas originales en el archivo:", ncol(datos_crudos), "\n")
+cat("Columnas solicitadas en la configuración:", length(variables_deseadas), "\n")
+cat("Columnas extraídas exitosamente:", ncol(base_filtrada), "\n\n")
+
+if (length(columnas_ausentes) > 0) {
+  cat(">> [!] AVISO DE COBERTURA DESIGUAL (Rúbrica Sección 4.1):\n")
+  cat("Las siguientes variables solicitadas NO existen en este archivo y fueron omitidas sin causar error:\n")
+  print(columnas_ausentes)
+} else {
+  cat(">> COBERTURA PERFECTA: Todas las variables solicitadas fueron encontradas.\n")
+}
+
+cat("\n========================================================================\n")
+cat("La base de datos resultante se llama 'base_filtrada'.\n")
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se ejecutó el script sobre una base real (temporada 2017-2018), lo que
+reveló de inmediato un caso real de "cobertura desigual" (ver Entrada
+10): de las 28 variables solicitadas, solo se extrajeron 22, confirmando
+en la práctica el comportamiento esperado del filtro seguro.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: el script funcionó exactamente como se diseñó (no se detuvo
+ante columnas faltantes, y reportó cuáles omitió), lo que permitió
+detectar y diagnosticar el problema de cobertura de la Entrada 10 en
+lugar de que el script fallara en silencio o con un error fatal.
+</div>
+</div>
+
+## Fase: Control de Calidad
+
+<div class="bitacora-card">
+<h4>Entrada 9 — Script de auditoría inicial de la base de datos</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — Control de calidad de la base cruda, previo a cualquier transformación (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Antes de transformar los datos, construir un script de R que inspeccionara
+la base cruda: número de variables, valores faltantes y dónde se
+concentran, tipos de datos, duplicados, y validaciones adicionales
+relevantes, organizado por secciones con lectura de la ruta y resultados
+impresos al final.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Primero empecemos con un codigo de control de las bases de datos, quiero un codigo de Rstudio que inspeccione la base de datos, quiero que me diga el numero de varibales que tiene, si hay faltandes y donde, y que evalue de mas formas (las que consideres mas importantes), para poder continuar con lo que queremos, primero debemos valorar la base de datos inicial. dime que cosas va a revisar el codigo y enviame el codigo que lo haga. quiero que la estructura del mismo sea: Lectura de base y me pida la ruta de acceso. realice por secciones de validacion y me de los resultados organizados al final.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini enumeró 5 inspecciones (dimensiones estructurales, mapeo de NAs,
+auditoría de tipos de datos, duplicados, y evaluación lógica de cuotas ≤1)
+y entregó un script que pide la ruta interactivamente (manual o con
+ventana emergente vía <code>file.choose()</code>), y organiza los
+resultados en secciones: resumen estructural, análisis de faltantes,
+integridad y lógica (duplicados y cuotas imposibles), y tipos de datos.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+# ==============================================================================
+# SCRIPT DE CONTROL Y AUDITORÍA DE BASE DE DATOS INICIAL
+# ==============================================================================
+
+cat("Opciones de carga:\n1. Ingresar ruta manualmente en consola\n2. Seleccionar archivo con ventana emergente\n")
+opcion <- readline(prompt = "Elige una opción (1 o 2): ")
+
+if (opcion == "1") {
+  ruta <- readline(prompt = "Ingresa la ruta completa del archivo CSV (ej. C:/datos/SP1.csv): ")
+  datos_crudos <- read.csv(ruta, stringsAsFactors = FALSE)
+} else {
+  cat("Por favor, selecciona el archivo en la ventana emergente...\n")
+  ruta <- file.choose()
+  datos_crudos <- read.csv(ruta, stringsAsFactors = FALSE)
+}
+
+diagnostico <- list()
+diagnostico$archivo_analizado <- ruta
+
+diagnostico$total_variables <- ncol(datos_crudos)
+diagnostico$total_observaciones <- nrow(datos_crudos)
+diagnostico$nombres_variables <- names(datos_crudos)
+
+nas_por_variable <- vapply(datos_crudos, function(x) sum(is.na(x)), FUN.VALUE = numeric(1))
+diagnostico$total_nas_global <- sum(nas_por_variable)
+diagnostico$variables_con_nas <- nas_por_variable[nas_por_variable > 0]
+diagnostico$filas_incompletas <- sum(!complete.cases(datos_crudos))
+diagnostico$porcentaje_filas_completas <- round((nrow(datos_crudos) - diagnostico$filas_incompletas) / nrow(datos_crudos) * 100, 2)
+
+diagnostico$tipos_de_datos <- vapply(datos_crudos, class, FUN.VALUE = character(1))
+diagnostico$filas_duplicadas <- sum(duplicated(datos_crudos))
+
+cols_numericas <- names(datos_crudos)[vapply(datos_crudos, is.numeric, FUN.VALUE = logical(1))]
+cuotas_invalidas <- lapply(datos_crudos[cols_numericas], function(x) sum(x <= 1, na.rm = TRUE))
+cuotas_invalidas_filtrado <- unlist(cuotas_invalidas[cuotas_invalidas > 0])
+
+if (length(cuotas_invalidas_filtrado) > 0) {
+  diagnostico$alertas_cuotas_imposibles <- cuotas_invalidas_filtrado
+} else {
+  diagnostico$alertas_cuotas_imposibles <- "Ninguna cuota <= 1 detectada."
+}
+
+cat("\n========================================================================\n")
+cat("          RESULTADOS DEL CONTROL DE CALIDAD DE LA BASE DE DATOS         \n")
+cat("========================================================================\n\n")
+
+cat(">> 1. RESUMEN ESTRUCTURAL\n")
+cat("Archivo:", diagnostico$archivo_analizado, "\n")
+cat("Observaciones (Filas):", diagnostico$total_observaciones, "\n")
+cat("Variables (Columnas):", diagnostico$total_variables, "\n\n")
+
+cat(">> 2. ANÁLISIS DE FALTANTES (NAs)\n")
+cat("Total de celdas con NA:", diagnostico$total_nas_global, "\n")
+cat("Filas con al menos un NA:", diagnostico$filas_incompletas, "\n")
+cat("Porcentaje de datos limpios (filas completas):", diagnostico$porcentaje_filas_completas, "%\n")
+if(length(diagnostico$variables_con_nas) > 0) {
+  cat("Variables que contienen NAs y cantidad:\n")
+  print(diagnostico$variables_con_nas)
+} else {
+  cat("No se encontraron valores faltantes en ninguna variable.\n")
+}
+cat("\n")
+
+cat(">> 3. INTEGRIDAD Y LÓGICA\n")
+cat("Filas duplicadas:", diagnostico$filas_duplicadas, "\n")
+cat("Cuotas imposibles (<= 1):\n")
+print(diagnostico$alertas_cuotas_imposibles)
+cat("\n")
+
+cat(">> 4. TIPOS DE DATOS DETECTADOS (Revisa que Date no sea 'character' y cuotas sean 'numeric')\n")
+print(diagnostico$tipos_de_datos)
+cat("\n========================================================================\n")
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se ejecutó sobre la base real. La salida reportó como "cuotas imposibles
+(≤ 1)" columnas que no son cuotas —goles, tarjetas y otras estadísticas
+que legítimamente valen 0 o 1—, lo que reveló que el criterio se aplicaba
+a todas las columnas numéricas (ver Entradas 11 y 12).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado con corrección pendiente: el script se ejecutó y funcionó
+técnicamente, pero al usarlo (ver Entrada 12) se detectó que su lógica de
+auditoría de "cuotas imposibles" era conceptualmente incorrecta, porque
+evaluaba <em>todas</em> las columnas numéricas —incluyendo estadísticas
+del partido como goles o tarjetas— con el mismo criterio ≤ 1 que solo
+aplica a las cuotas.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 10 — Cobertura desigual detectada al ejecutar el script de extracción (22 de 28 variables)</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — validación empírica de la extracción de variables sobre una temporada antigua (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Diagnosticar por qué el script de extracción dinámica (Entrada 8), al
+ejecutarse sobre el archivo de la temporada 2017-2018, extrajo solo 22 de
+las 28 variables solicitadas, y decidir cómo proceder.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+Reporte de la salida real de consola del script de la Entrada 8 mostrando
+64 columnas originales, 28 variables solicitadas, pero solo 22 extraídas,
+con el aviso de cobertura desigual listando 6 variables ausentes:
+Promedio_Local, Promedio_Empate, Promedio_Visitante, Bet365_Cierre_Local,
+Bet365_Cierre_Empate y Bet365_Cierre_Visitante.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+en vez de leer 28, se quedo con 22 . > RESUMEN:> cat("Columnas originales en el archivo:", ncol(datos_crudos), "\n")Columnas originales en el archivo: 64 > cat("Variables solicitadas en el diccionario:", length(diccionario_variables), "\n")Variables solicitadas en el diccionario: 28 > cat("Columnas extraídas y traducidas exitosamente:", ncol(base_filtrada), "\n\n")Columnas extraídas y traducidas exitosamente: 22 > if (length(columnas_ausentes) > 0) {+   cat(">> [!] AVISO DE COBERTURA DESIGUAL:\n")+   cat("Las siguientes variables NO existen en este archivo y fueron omitidas:\n")+   print(unname(diccionario_variables[columnas_ausentes])) # Imprime el nombre en español de lo que faltó+ } else {+   cat(">> COBERTURA PERFECTA: Todas las variables solicitadas fueron encontradas.\n")+ }>> [!] AVISO DE COBERTURA DESIGUAL:
+Las siguientes variables NO existen en este archivo y fueron omitidas:
+[1] "Promedio_Local"          "Promedio_Empate"         "Promedio_Visitante"      "Bet365_Cierre_Local"
+[5] "Bet365_Cierre_Empate"    "Bet365_Cierre_Visitante"
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini confirmó que el script funcionó como se diseñó y que el resultado
+era exactamente la advertencia de la sección 4.1 de la rúbrica puesta a
+prueba: en la temporada 2017-2018, Football-Data todavía no recolectaba
+cuotas de cierre (de ahí que faltaran las 3 columnas
+<code>Bet365_Cierre_*</code>), y los promedios de mercado se llamaban
+<code>BbAvH/D/A</code> (proveedor BetBrain) en vez de <code>AvgH/D/A</code>
+en esos años. Presentó dos opciones: (A) cambiar el alcance a temporadas
+recientes (2023-2024 en adelante) para tener las 28 variables completas,
+ganar la bonificación de apertura/cierre y cumplir el requisito de tratar
+la anomalía de Pinnacle en 2025; o (B) mantener la temporada 2017-2018,
+perdiendo la bonificación de cierre, y ajustar el diccionario para usar
+<code>BbAvH/D/A</code> en lugar de <code>AvgH/D/A</code>. Cerró
+preguntando cuál opción se prefería.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se contrastó el resultado del script (22 de 28 variables, con las 6
+específicas listadas) contra la documentación de la fuente, confirmando
+que la ausencia correspondía efectivamente a un cambio de nomenclatura y
+disponibilidad entre temporadas, no a un error del código.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+En la práctica se mantuvieron temporadas antiguas: el alcance final cubre
+2017/18 y 2018/19 (Entrada 17). La comparación entre apertura y cierre se
+hizo con las cuotas de cierre de Pinnacle (759 partidos), y el promedio de
+apertura original venía de <code>BbAvH/D/A</code>, como confirmó el
+detector del Script 0 (Entrada 26); luego el equipo lo redefinió como el
+promedio de las 6 casas comparadas.
+</div>
+</div>
+
+## Fase: Optimización
+
+<div class="bitacora-card">
+<h4>Entrada 11 — Simplificación de la entrada de ruta de acceso</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — ajuste de usabilidad del script de auditoría (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Simplificar la lectura de la ruta de acceso del script de auditoría a una
+única forma de entrada (copiar y pegar la ruta), en lugar de las dos
+opciones (manual o ventana emergente) de la versión anterior.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">solo quiero copiar y pegar la ruta de acceso. haz que sea la unica opción</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Script actualizado con una única entrada por <code>readline()</code>, que
+además convierte automáticamente las barras invertidas de Windows (<code>&#92;</code>)
+a barras normales (<code>/</code>) y elimina comillas sobrantes de rutas
+copiadas con "Copiar ruta de acceso", manteniendo el resto de las
+secciones de auditoría igual a la Entrada 9 (con el ajuste adicional de
+tratar también cadenas vacías como faltantes, no solo <code>NA</code>).
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+# 1. LECTURA DE LA BASE DE DATOS (Ingreso directo de ruta)
+cat("Ingresa la ruta completa del archivo CSV y presiona Enter.\n")
+cat("(Ejemplo: C:/Usuarios/Tesis/Descargas/SP1.csv o C:\\datos\\SP1.csv)\n")
+ruta_cruda <- readline(prompt = "Ruta del archivo: ")
+
+# Limpiamos la ruta por si copiaste directamente desde Windows con "\"
+ruta <- gsub("\\\\", "/", ruta_cruda)
+# Limpiamos comillas extrañas que a veces se copian al usar "Copiar ruta de acceso"
+ruta <- gsub("\"", "", ruta)
+
+datos_crudos <- read.csv(ruta, stringsAsFactors = FALSE)
+
+diagnostico <- list()
+diagnostico$archivo_analizado <- ruta
+
+diagnostico$total_variables <- ncol(datos_crudos)
+diagnostico$total_observaciones <- nrow(datos_crudos)
+diagnostico$nombres_variables <- names(datos_crudos)
+
+# Ahora también cuenta cadenas vacías como faltantes
+nas_por_variable <- vapply(datos_crudos, function(x) sum(is.na(x) | x == ""), FUN.VALUE = numeric(1))
+diagnostico$total_nas_global <- sum(nas_por_variable)
+diagnostico$variables_con_nas <- nas_por_variable[nas_por_variable > 0]
+diagnostico$filas_incompletas <- sum(!complete.cases(datos_crudos))
+diagnostico$porcentaje_filas_completas <- round((nrow(datos_crudos) - diagnostico$filas_incompletas) / nrow(datos_crudos) * 100, 2)
+
+diagnostico$tipos_de_datos <- vapply(datos_crudos, class, FUN.VALUE = character(1))
+diagnostico$filas_duplicadas <- sum(duplicated(datos_crudos))
+
+cols_numericas <- names(datos_crudos)[vapply(datos_crudos, is.numeric, FUN.VALUE = logical(1))]
+cuotas_invalidas <- lapply(datos_crudos[cols_numericas], function(x) sum(x <= 1, na.rm = TRUE))
+cuotas_invalidas_filtrado <- unlist(cuotas_invalidas[cuotas_invalidas > 0])
+
+if (length(cuotas_invalidas_filtrado) > 0) {
+  diagnostico$alertas_cuotas_imposibles <- cuotas_invalidas_filtrado
+} else {
+  diagnostico$alertas_cuotas_imposibles <- "Ninguna cuota <= 1 detectada."
+}
+
+cat("\n========================================================================\n")
+cat("          RESULTADOS DEL CONTROL DE CALIDAD DE LA BASE DE DATOS         \n")
+cat("========================================================================\n\n")
+cat(">> 1. RESUMEN ESTRUCTURAL\n")
+cat("Archivo:", diagnostico$archivo_analizado, "\n")
+cat("Observaciones (Filas):", diagnostico$total_observaciones, "\n")
+cat("Variables (Columnas):", diagnostico$total_variables, "\n\n")
+cat(">> 2. ANÁLISIS DE FALTANTES (NAs y Celdas Vacías)\n")
+cat("Total de celdas con NA:", diagnostico$total_nas_global, "\n")
+cat("Filas con al menos un dato faltante:", diagnostico$filas_incompletas, "\n")
+cat("Porcentaje de datos limpios (filas completas):", diagnostico$porcentaje_filas_completas, "%\n")
+if(length(diagnostico$variables_con_nas) > 0) {
+  cat("Variables que contienen datos faltantes y cantidad:\n")
+  print(diagnostico$variables_con_nas)
+} else {
+  cat("No se encontraron valores faltantes en ninguna variable.\n")
+}
+cat("\n")
+cat(">> 3. INTEGRIDAD Y LÓGICA (Criterios Rúbrica)\n")
+cat("Filas duplicadas:", diagnostico$filas_duplicadas, "\n")
+cat("Cuotas imposibles (<= 1):\n")
+print(diagnostico$alertas_cuotas_imposibles)
+cat("\n")
+cat(">> 4. TIPOS DE DATOS DETECTADOS\n")
+print(diagnostico$tipos_de_datos)
+cat("\n========================================================================\n")
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Se ejecutó el script sobre la base real, confirmándose en la interacción
+siguiente (Entrada 12) que "el código funciona bien" a nivel técnico.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: la entrada de ruta quedó simplificada a una sola forma. Sin
+embargo, al ejecutar el script sobre datos reales se hizo evidente el
+problema de fondo ya señalado en la Entrada 9 (falsos positivos de
+"anomalía" en variables que no son cuotas), lo que llevó directamente a
+la corrección de la Entrada 12.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 12 — Corrección del script de auditoría a partir del diccionario oficial de variables</h4>
+<div class="bitacora-meta">Fecha: semanas 5–6 del cronograma (31 de agosto – 7 de septiembre de 2026, previo al Avance 1) &nbsp;|&nbsp; Etapa: Fase 1 — lectura obligatoria de la documentación de columnas (notes.txt) antes de programar, y corrección de la lógica de auditoría (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Corregir el falso positivo de anomalías detectado al usar el script de
+auditoría (variables de estadísticas del partido, como goles o tarjetas,
+marcadas incorrectamente como "cuotas imposibles" por tomar valores 0 o
+1), leyendo primero el diccionario oficial de variables de Football-Data
+(<code>notes.txt</code>) —lectura obligatoria según la sección 4.1 de la
+rúbrica— y reescribiendo el script para que el filtro ≤ 1 se aplique
+únicamente a las columnas de cuotas.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Diagnóstico del problema y propuesta de leer el diccionario</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">ok el codigo funciona bien, pero es poco logica, ya que no solo tiene coutoas sino resultados, y demas, asi que al hacer el analisis da que hay anomalias que realmente no son anomalias, para solucionar esto vamos a hacer algo antes de los codigos y es leer, analizar y transcribir el diccionario de variables. confirma que entiendes la mision y procedere a mandarte el diccionario</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini reconoció el error metodológico (auditar todas las columnas
+numéricas con el criterio ≤ 1, marcando como anomalías variables como
+goles o tarjetas), señaló que la propuesta del usuario coincide
+exactamente con el requisito explícito de la sección 4.1 de la rúbrica
+("la documentación de columnas... es lectura obligatoria antes de
+escribir código"), confirmó la misión, y detalló su plan: clasificar las
+variables en grupos lógicos, seleccionar y transcribir solo las relevantes
+para el proyecto, y definir reglas de validación específicas por grupo.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Envío del diccionario oficial y corrección del script</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+Envío del texto íntegro de "Notes for Football Data" (notes.txt de
+Football-Data.co.uk): clave de datos de resultados (Div, Date, HomeTeam,
+AwayTeam, FTHG/FTAG, FTR, HTHG/HTAG/HTR), estadísticas del partido
+(asistencia, árbitro, tiros, córners, faltas, tarjetas, etc.), clave de
+cuotas de casas de apuestas (más de 25 operadores con sufijos H/D/A,
+cuotas de cierre marcadas con "C"), cuotas de mercado agregado
+(Bb1X2/BbMx/BbAv, Max/Avg), cuotas de goles totales (Over/Under 2.5) y de
+hándicap asiático, y las fuentes de las que Football-Data recopila sus
+datos.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+Notes for Football Data
+
+All data is in csv format... [texto íntegro del diccionario notes.txt de Football-Data.co.uk, incluyendo la clave de resultados (Div, Date, Time, HomeTeam, AwayTeam, FTHG/HG, FTAG/AG, FTR/Res, HTHG, HTAG, HTR), las estadísticas de partido (Attendance, Referee, HS, AS, HST, AST, HHW, AHW, HC, AC, HF, AF, HFKC, AFKC, HO, AO, HY, AY, HR, AR, HBP, ABP, con sus notas sobre Free Kicks Conceded y tarjetas inglesas/escocesas), la clave completa de cuotas de casas de apuestas 1X2 (1XBet, Bet365, Betfair, Betfred, BetMGM, Betvictor, Blue Square, Bet&Win, Coral, Gamebookers, Interwetten, Ladbrokes, Paddy Power, Pinnacle, Skybet, Sporting Odds, Sportingbet, Stan James, Stanleybet, VC Bet, William Hill, con la nota de que las cuotas de cierre llevan una "C" adicional, ej. B365CH), las columnas de mercado agregado (Bb1X2, BbMxH/D/A, BbAvH/D/A, MaxH/D/A, AvgH/D/A, BFEH/D/A), la clave de cuotas de goles totales (BbOU, BbMx/Av >2.5 y <2.5, GB/B365/P/Max/Avg >2.5 y <2.5) y la clave de cuotas de hándicap asiático (BbAH, BbAHh, AHh, BbMxAHH/A, BbAvAHH/A, GBAHH/A, GBAH, LBAHH/A, LBAH, B365AHH/A, B365AH, PAHH/A, MaxAHH/A, AvgAHH/A); y el reconocimiento de fuentes (XScores para resultados, BBC/Flashscore/ESPN/Bundesliga.de/Gazzetta.it/Football.fr para estadísticas de partido, Betbrain.com/Oddsportal.com/casas individuales para cuotas), con la nota de que las cuotas se recolectan los viernes (partidos de fin de semana) y los martes (partidos entre semana).
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini clasificó las variables en 3 grupos lógicos con su regla de
+validación (1. Metadatos del partido: Div/Date/HomeTeam/AwayTeam, sin NA,
+fecha explícita; 2. La "verdad" (ground truth): FTR como núcleo de la
+evaluación, solo H/D/A, goles/estadísticas pueden ser ≥ 0; 3. Cuotas de
+apertura y cierre: única categoría a la que se aplica la regla de ≤ 1),
+señaló que el diccionario también incluye cuotas de Over/Under y hándicap
+asiático que pueden ignorarse para el objetivo 1X2 del proyecto, y
+entregó una segunda versión del script de auditoría que separa
+explícitamente <code>cols_cuotas</code> de <code>cols_estadisticas</code>
+mediante un vector de exclusión basado en el diccionario, aplicando el
+filtro ≤ 1 solo a cuotas y un filtro &lt; 0 a las estadísticas físicas,
+además de reportar el conteo de columnas por tipo y una alerta explícita
+si la fecha fue leída como texto.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+# ==============================================================================
+# SCRIPT DE CONTROL Y AUDITORÍA DE BASE DE DATOS (VERSIÓN 2 - BASADA EN DICCIONARIO)
+# ==============================================================================
+
+ruta_cruda <- "PEGA_AQUÍ_LA_RUTA"
+ruta <- gsub("\\\\", "/", ruta_cruda)
+ruta <- gsub("\"", "", ruta)
+datos_crudos <- read.csv(ruta, stringsAsFactors = FALSE)
+
+diagnostico <- list(archivo_analizado = ruta)
+diagnostico$total_variables <- ncol(datos_crudos)
+diagnostico$total_observaciones <- nrow(datos_crudos)
+
+# Variables que NO son cuotas (según notas de Football-Data)
+vars_no_cuotas <- c(
+  "Div", "Date", "Time", "HomeTeam", "AwayTeam", "Referee", "Attendance",
+  "FTHG", "HG", "FTAG", "AG", "FTR", "Res", "HTHG", "HTAG", "HTR",
+  "HS", "AS", "HST", "AST", "HHW", "AHW", "HC", "AC", "HF", "AF",
+  "HFKC", "AFKC", "HO", "AO", "HY", "AY", "HR", "AR", "HBP", "ABP"
+)
+
+cols_numericas <- names(datos_crudos)[vapply(datos_crudos, is.numeric, FUN.VALUE = logical(1))]
+cols_cuotas <- setdiff(cols_numericas, vars_no_cuotas)
+cols_estadisticas <- intersect(cols_numericas, vars_no_cuotas)
+
+nas_por_variable <- vapply(datos_crudos, function(x) sum(is.na(x) | x == ""), FUN.VALUE = numeric(1))
+diagnostico$total_nas_global <- sum(nas_por_variable)
+diagnostico$variables_con_nas <- nas_por_variable[nas_por_variable > 0]
+
+# A. Auditoría de Cuotas Imposibles (Rúbrica: <= 1) - SOLO EN BLOQUE DE CUOTAS
+if(length(cols_cuotas) > 0) {
+  anomalias_cuotas <- lapply(datos_crudos[cols_cuotas], function(x) sum(x <= 1, na.rm = TRUE))
+  diagnostico$alerta_cuotas <- unlist(anomalias_cuotas[anomalias_cuotas > 0])
+} else {
+  diagnostico$alerta_cuotas <- "No se detectaron columnas de cuotas numéricas."
+}
+
+# B. Auditoría de Estadísticas Físicas Imposibles (Goles/Tarjetas < 0) - SOLO EN ESTADÍSTICAS
+if(length(cols_estadisticas) > 0) {
+  anomalias_stats <- lapply(datos_crudos[cols_estadisticas], function(x) sum(x < 0, na.rm = TRUE))
+  diagnostico$alerta_stats <- unlist(anomalias_stats[anomalias_stats > 0])
+}
+
+cat("\n========================================================================\n")
+cat("   AUDITORÍA ESTRUCTURAL Y LÓGICA (BASADA EN DICCIONARIO FOOTBALL-DATA) \n")
+cat("========================================================================\n\n")
+cat(">> 1. RESUMEN ESTRUCTURAL\n")
+cat("Archivo:", diagnostico$archivo_analizado, "\n")
+cat("Observaciones (Filas):", diagnostico$total_observaciones, "\n")
+cat("Variables (Columnas):", diagnostico$total_variables, "\n")
+cat("   - Columnas detectadas como Cuotas:", length(cols_cuotas), "\n")
+cat("   - Columnas detectadas como Físicas/Stats:", length(cols_estadisticas), "\n\n")
+
+cat(">> 2. ANÁLISIS DE COMPLETITUD\n")
+cat("Total de celdas vacías o NA:", diagnostico$total_nas_global, "\n")
+if(length(diagnostico$variables_con_nas) > 0) {
+  cat("Top 10 variables con más datos faltantes:\n")
+  print(head(sort(diagnostico$variables_con_nas, decreasing = TRUE), 10))
+} else {
+  cat("Base de datos 100% completa. No hay NAs.\n")
+}
+cat("\n")
+
+cat(">> 3. VALIDACIÓN LÓGICA (Criterios Rúbrica)\n")
+cat("A. Cuotas Imposibles (Valores <= 1 en mercados de apuestas):\n")
+if(length(diagnostico$alerta_cuotas) > 0 && is.numeric(diagnostico$alerta_cuotas)) {
+  print(diagnostico$alerta_cuotas)
+} else {
+  cat("   - Ninguna anomalía. Todas las cuotas son > 1.\n")
+}
+
+cat("\nB. Estadísticas Imposibles (Valores < 0 en goles, tiros, etc.):\n")
+if(length(diagnostico$alerta_stats) > 0 && is.numeric(diagnostico$alerta_stats)) {
+  print(diagnostico$alerta_stats)
+} else {
+  cat("   - Ninguna anomalía. Estadísticas físicas dentro del rango lógico.\n")
+}
+
+cat("\n>> 4. ALERTA DE FORMATO DE FECHA\n")
+cat("Clase detectada para 'Date':", class(datos_crudos$Date), "\n")
+if(class(datos_crudos$Date) == "character") {
+  cat("   [!] IMPORTANTE: R leyó la fecha como texto. En la fase de limpieza aplicaremos as.Date().\n")
+}
+cat("========================================================================\n")
+</pre>
+</details>
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Revisión del vector <code>vars_no_cuotas</code> contra
+<code>notes.txt</code>: incluye todas las estadísticas de partido del
+diccionario (goles, tiros, córners, faltas, fueras de juego, tarjetas y
+puntos por tarjeta), por lo que las falsas alarmas sobre goles y tarjetas
+quedan eliminadas. La revisión detectó un caso residual: otras columnas
+numéricas que tampoco son cuotas —el tamaño del hándicap asiático
+(<code>AHh</code>, <code>B365AH</code>, <code>LBAH</code>,
+<code>GBAH</code>) y los conteos de casas de BetBrain
+(<code>Bb1X2</code>, <code>BbOU</code>, <code>BbAH</code>)— no están en
+el vector de exclusión y podrían seguir apareciendo como "cuotas ≤ 1".
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptada como versión definitiva del script de auditoría de la base
+cruda. El falso positivo residual no afecta el análisis, porque esas
+columnas (hándicap asiático y conteos de BetBrain) no pertenecen al
+mercado 1X2 que analiza el proyecto (Entrada 3); se deja documentado como
+limitación del script.
+</div>
+</div>
+
+## Fase: Evaluación de la Calibración
+
+<div class="bitacora-card">
+<h4>Entrada 13 — Curva de calibración (diagrama de fiabilidad), ítem 7.1</h4>
+<div class="bitacora-meta">Fecha: semana 7 del cronograma (8 – 14 de septiembre de 2026, Avance 2) &nbsp;|&nbsp; Etapa: Fase 3 de la rúbrica — Evaluación de la calibración, ítem 7.1 (herramienta: Gemini)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Iniciar la evaluación de la calibración (sección 7 de la rúbrica)
+construyendo la curva de calibración del ítem 7.1, a partir de la base ya
+depurada. Contexto aportado por el equipo en el prompt (no por la IA): un
+integrante del equipo había realizado previamente, con tres scripts de R
+propios ("control", "limpieza" y "excedentes"), el análisis de la base, la
+eliminación de NA, duplicados e inconsistencias, la selección de
+variables, y el cálculo y la remoción del margen con dos métodos
+(multiplicativo y "logarítmico").
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">okay, mi amigo ingreso la base de datos y lo que hizo fue; con codigo analizar la base de datos. eliminar los NA, los duplicados, los datos inconsistentes. luego limpio a las variables que queramos eleigr y por ultimo hizo el calculo del excedente y quitar ese excedente con 2 metodos que son el de multiplicar y el logaritmico. entonces me mando 3 archivos de R, que se llaman "excedentes" , "limpieza", "control". entonces ya abri estos 3 archivos en mi R y podemos empezar a trabajar. de la rubrica-guia quiero hacer el inciso 7 que es el de la evaluacion de la calibración. Quiero que empecemos con el inciso 7.1 que es el de Curva de calibración (diagrama de fiabilidad)</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Script en R que, sobre <code>base_filtrada</code>, recalcula las
+probabilidades brutas a partir de las cuotas promedio de cierre del
+mercado (<code>Promedio_Cierre_Local/Empate/Visitante</code>), aplica
+normalización multiplicativa, pasa los tres resultados (H/D/A) a formato
+largo como eventos binarios (ocurrió = 1 / no ocurrió = 0), los agrupa en
+10 intervalos de igual ancho (0.1), construye una tabla con número de
+eventos, probabilidad media pronosticada y frecuencia observada por
+intervalo, y grafica el diagrama de fiabilidad con <code>ggplot2</code>
+(puntos proporcionales al número de eventos y diagonal y = x como
+referencia de calibración perfecta). La respuesta no incluye intervalos de
+confianza por intervalo ni una justificación del esquema de agrupamiento.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+Para el ítem 7.1: Curva de calibración (diagrama de fiabilidad), únicamente necesitas preparar los datos en bins, generar la tabla resumen y trazar el gráfico con la diagonal de referencia.
+Código en R exclusivo para el Ítem 7.1
+Copia y pega este bloque en tu R Markdown:
+R
+# ==============================================================================
+# ÍTEM 7.1: CURVA DE CALIBRACIÓN (DIAGRAMA DE FIABILIDAD)
+# ==============================================================================
+
+library(tidyverse)
+library(ggplot2)
+library(scales)
+
+# 1. Preparación de probabilidades ajustadas (método multiplicativo sobre Promedio de Cierre)
+df_item_7_1 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+
+    # Normalización multiplicativa
+    prob_mult_H = prob_bruta_H / overround,
+    prob_mult_D = prob_bruta_D / overround,
+    prob_mult_A = prob_bruta_A / overround
+  )
+
+# 2. Transformar a formato largo para evaluar el evento binario (Ocurrió = 1, No Ocurrió = 0)
+datos_curva <- df_item_7_1 %>%
+  select(Resultado_Final, prob_mult_H, prob_mult_D, prob_mult_A) %>%
+  pivot_longer(
+    cols = starts_with("prob_mult_"),
+    names_to = "tipo_resultado",
+    values_to = "prob_pronosticada"
+  ) %>%
+  mutate(
+    ocurrio = case_when(
+      tipo_resultado == "prob_mult_H" & Resultado_Final == "H" ~ 1,
+      tipo_resultado == "prob_mult_D" & Resultado_Final == "D" ~ 1,
+      tipo_resultado == "prob_mult_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+# 3. Construcción de la Tabla de Bins (Intervalos de probabilidad de 10% en 10%)
+tabla_bins <- datos_curva %>%
+  mutate(
+    bin = cut(prob_pronosticada, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+  ) %>%
+  group_by(bin) %>%
+  summarise(
+    n_eventos = n(),
+    prob_media_pronosticada = mean(prob_pronosticada),
+    frecuencia_real_observada = mean(ocurrio),
+    .groups = "drop"
+  )
+
+# Mostrar tabla en la consola
+print(tabla_bins)
+
+# 4. Generación del Diagrama de Fiabilidad (Curva de Calibración)
+ggplot(tabla_bins, aes(x = prob_media_pronosticada, y = frecuencia_real_observada)) +
+  geom_point(aes(size = n_eventos), color = "#2b5c8f", alpha = 0.8) +
+  geom_line(color = "#2b5c8f", linewidth = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red", linewidth = 0.8) +
+  scale_x_continuous(limits = c(0, 1), labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(limits = c(0, 1), labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Diagrama de Fiabilidad (Curva de Calibración)",
+    subtitle = "Comparación entre Probabilidad Implícita Ajustada y Frecuencia Real Observada",
+    x = "Probabilidad Pronosticada (Ajustada)",
+    y = "Frecuencia Real Observada",
+    size = "N° de Eventos",
+    caption = "Línea roja punteada: Calibración perfecta (y = x)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank()
+  )
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Revisión del código contra la sección 7.1 de la rúbrica: la curva remueve
+el margen antes de comparar (no usa probabilidades brutas), agrupa en 10
+intervalos de igual ancho y evalúa los tres resultados apilados como
+eventos binarios. Se identificaron tres faltantes: (1) los puntos de la
+curva no tienen intervalo de confianza, y la rúbrica exige uno por punto,
+preferiblemente Wilson; (2) no se justifica el número ni el tipo de
+intervalos (igual ancho frente a igual frecuencia); (3) solo usa
+normalización multiplicativa sobre el promedio de cierre del mercado, sin
+el segundo método de remoción del margen ni las probabilidades ya
+calculadas en el script "excedentes".
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado como base de la curva de calibración, con correcciones
+requeridas antes del informe final: agregar intervalos de Wilson por
+intervalo (p. ej. con <code>binom::binom.confint()</code>), justificar el
+esquema de agrupamiento y comprobar que la lectura se mantiene con otro
+número de intervalos, y repetir la curva con el segundo método de
+remoción del margen para el análisis de sensibilidad (criterio C). Estos
+scripts fueron la base de trabajo previa al reporte autogenerado: el
+reporte final (Entradas 17–26) adopta el método de potencia como principal
+y compara los métodos de remoción del margen.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 14 — Reglas de puntuación: Brier, líneas base, descomposición de Murphy y RPS, ítem 7.2</h4>
+<div class="bitacora-meta">Fecha: semana 7 del cronograma (8 – 14 de septiembre de 2026, Avance 2) &nbsp;|&nbsp; Etapa: Fase 3 de la rúbrica — Evaluación de la calibración, ítem 7.2 (herramienta: Gemini; continuación de la conversación de la Entrada 13)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Calcular las reglas de puntuación exigidas en el ítem 7.2 de la rúbrica:
+Brier score comparado contra líneas base, y los dos componentes
+bonificables (descomposición de Murphy, hasta 2 puntos; Ranked
+Probability Score, hasta 2 puntos).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">pasemos al segundo items que es: 7.2 Reglas de puntuación
+Brier score: error cuadrático medio entre probabilidad y resultado. Menor es mejor. Reportarlo solo, sin referencia, no dice nada: compararlo contra líneas base (predecir siempre la frecuencia histórica; predecir uniforme) es lo que le da sentido.
+Descomposición de Murphy del Brier en fiabilidad, resolución e incertidumbre: separa cuánto del error viene de mala calibración y cuánto de la dificultad intrínseca del fenómeno. Bonificable.
+Ranked Probability Score (RPS): más apropiado que el Brier para el mercado 1X2, porque respeta el orden natural entre victoria local, empate y victoria visitante. Bonificable.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini dio primero una explicación conceptual para la sustentación (las
+dos líneas base, los tres componentes de Murphy y por qué el RPS respeta
+el orden del 1X2), y luego un script en R que, sobre las mismas
+probabilidades multiplicativas de las cuotas promedio de cierre: calcula
+el Brier de la casa y de las líneas base uniforme (1/3) y de frecuencia
+histórica, el Brier Skill Score respecto a la frecuencia histórica, la
+descomposición de Murphy (fiabilidad y resolución con 10 intervalos de
+igual ancho sobre los eventos apilados, incertidumbre a partir de las
+frecuencias históricas por resultado), y el RPS promedio por partido con
+la fórmula de probabilidades acumuladas. Imprime un resumen consolidado
+que incluye una línea de "Comprobación" calculada como (CAL − RES + UNC)/3.
+El RPS no se compara contra ninguna línea base en esta respuesta.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+¡Excelente! El ítem 7.2 Reglas de puntuación es vital porque evalúa matemáticamente la calidad de los pronósticos. Además, como la rúbrica menciona puntos bonificables (Descomposición de Murphy y RPS), vamos a incluir el código completo para que obtengas el máximo puntaje.
+Explicación conceptual previa para tu defensa:
+	Brier Score y Líneas Base:
+	El Brier Score por sí solo es difícil de interpretar. Por eso, se compara con dos líneas base:
+	Línea base uniforme: Asignar 33.33% de probabilidad a cada resultado (azar puro).
+	Línea base de frecuencia histórica: Asignar la proporción real observada de victorias locales, empates y victorias visitantes a todos los partidos.
+	Descomposición de Murphy del Brier Score (Bonificable):
+"Brier"="Fiabilidad (CAL)"-"Resolución (RES)"+"Incertidumbre (UNC)"
+	Fiabilidad ("CAL"→0 es mejor): Cuán desviado está el pronóstico de la realidad.
+	Resolución ("RES"  más alto es mejor): Capacidad de separar los partidos según sus resultados.
+	Incertidumbre ("UNC" ): La variabilidad inherente del fútbol (dificultad intrínseca).
+	Ranked Probability Score - RPS (Bonificable):
+	Mide el error respetando el orden ordinal (Local>Empate>Visitante). Es la métrica estándar en fútbol porque penaliza menos predecir un empate cuando gana el local que predecir una victoria visitante cuando gana el local.
+Código en R exclusivo para el Ítem 7.2
+Copia y ejecuta este bloque en tu R Markdown:
+R
+# ==============================================================================
+# ÍTEM 7.2: REGLAS DE PUNTUACIÓN (SCORE RULES)
+# ==============================================================================
+
+library(tidyverse)
+
+# ------------------------------------------------------------------------------
+# 1. Preparación de datos y líneas base
+# ------------------------------------------------------------------------------
+df_item_7_2 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    # Probabilidades ajustadas de la casa de apuestas (Multiplicativo)
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+    p_H = prob_bruta_H / overround,
+    p_D = prob_bruta_D / overround,
+    p_A = prob_bruta_A / overround
+  )
+
+N <- nrow(df_item_7_2)
+
+# Frecuencias históricas globales de la base de datos (Línea Base 2)
+p_hist_H <- mean(df_item_7_2$Resultado_Final == "H")
+p_hist_D <- mean(df_item_7_2$Resultado_Final == "D")
+p_hist_A <- mean(df_item_7_2$Resultado_Final == "A")
+
+# Vectors binarios de resultados reales (1 si ocurrió, 0 si no)
+y_H <- as.numeric(df_item_7_2$Resultado_Final == "H")
+y_D <- as.numeric(df_item_7_2$Resultado_Final == "D")
+y_A <- as.numeric(df_item_7_2$Resultado_Final == "A")
+
+# ------------------------------------------------------------------------------
+# 2. Cálculo del Brier Score y Líneas Base
+# ------------------------------------------------------------------------------
+# A. Brier Score de la Casa de Apuestas
+brier_modelo <- mean((df_item_7_2$p_H - y_H)^2 + (df_item_7_2$p_D - y_D)^2 + (df_item_7_2$p_A - y_A)^2) / 3
+
+# B. Línea Base Uniforme (1/3 para cada resultado)
+brier_uniforme <- mean(((1/3) - y_H)^2 + ((1/3) - y_D)^2 + ((1/3) - y_A)^2) / 3
+
+# C. Línea Base Frecuencia Histórica
+brier_historico <- mean((p_hist_H - y_H)^2 + (p_hist_D - y_D)^2 + (p_hist_A - y_A)^2) / 3
+
+# Skill Score del Brier (Mejora % respecto a la frecuencia histórica)
+brier_skill_score <- 1 - (brier_modelo / brier_historico)
+
+# ------------------------------------------------------------------------------
+# 3. Descomposición de Murphy del Brier Score (BONIFICABLE)
+# ------------------------------------------------------------------------------
+# Incertidumbre Intrínseca (UNC)
+unc <- (p_hist_H * (1 - p_hist_H) + p_hist_D * (1 - p_hist_D) + p_hist_A * (1 - p_hist_A)) / 3
+
+# Agrupamiento por Bins para calcular Fiabilidad (CAL) y Resolución (RES)
+datos_murphy <- df_item_7_2 %>%
+  select(Resultado_Final, p_H, p_D, p_A) %>%
+  pivot_longer(cols = c(p_H, p_D, p_A), names_to = "tipo", values_to = "p") %>%
+  mutate(
+    y = case_when(
+      tipo == "p_H" & Resultado_Final == "H" ~ 1,
+      tipo == "p_D" & Resultado_Final == "D" ~ 1,
+      tipo == "p_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    ),
+    bin = cut(p, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+  )
+
+tabla_murphy <- datos_murphy %>%
+  group_by(bin) %>%
+  summarise(
+    n_k = n(),
+    p_k = mean(p),
+    y_k = mean(y),
+    .groups = "drop"
+  ) %>%
+  filter(n_k > 0)
+
+# Total de componentes evaluadas (3 * N partidos)
+N_total <- sum(tabla_murphy$n_k)
+
+# Fiabilidad (CAL): Qué tan cerca está la predicción del resultado real observado en cada bin
+cal <- sum(tabla_murphy$n_k * (tabla_murphy$p_k - tabla_murphy$y_k)^2) / N_total
+
+# Frecuencia global promedio
+y_bar <- mean(datos_murphy$y)
+
+# Resolución (RES): Cuánto se alejan los bins de la media global
+res <- sum(tabla_murphy$n_k * (tabla_murphy$y_k - y_bar)^2) / N_total
+
+# ------------------------------------------------------------------------------
+# 4. Ranked Probability Score - RPS (BONIFICABLE)
+# ------------------------------------------------------------------------------
+# El RPS evalúa la diferencia acumulada considerando el orden ordinal (Local -> Empate -> Visitante)
+
+calcular_rps_partido <- function(p_h, p_d, p_a, res_real) {
+  # Probabilidades acumuladas pronosticadas
+  P1 <- p_h
+  P2 <- p_h + p_d
+
+  # Probabilidades acumuladas reales
+  O1 <- ifelse(res_real == "H", 1, 0)
+  O2 <- ifelse(res_real == "H" | res_real == "D", 1, 0)
+
+  # Error cuadrático acumulado ordenado
+  rps <- 0.5 * ((P1 - O1)^2 + (P2 - O2)^2)
+  return(rps)
+}
+
+rps_valores <- mapply(calcular_rps_partido, df_item_7_2$p_H, df_item_7_2$p_D, df_item_7_2$p_A, df_item_7_2$Resultado_Final)
+rps_promedio <- mean(rps_valores)
+
+# ------------------------------------------------------------------------------
+# 5. Mostrar Resultados Consolidados
+# ------------------------------------------------------------------------------
+cat("\n=======================================================\n")
+cat("          RESUMEN DE REGLAS DE PUNTUACIÓN (7.2)         \n")
+cat("=======================================================\n")
+cat("Brier Score Casa de Apuestas: ", round(brier_modelo, 4), "\n")
+cat("Línea Base Uniforme (1/3):    ", round(brier_uniforme, 4), "\n")
+cat("Línea Base Frec. Histórica:  ", round(brier_historico, 4), "\n")
+cat("Brier Skill Score (BSS):     ", round(brier_skill_score * 100, 2), "%\n")
+cat("-------------------------------------------------------\n")
+cat("DESCOMPOSICIÓN DE MURPHY (BONIFICABLE):\n")
+cat("  - Fiabilidad (CAL):         ", round(cal, 6), " (Cercano a 0 = Excelente)\n")
+cat("  - Resolución (RES):         ", round(res, 6), " (Mayor = Mejor habilidad de separación)\n")
+cat("  - Incertidumbre (UNC):      ", round(unc, 6), " (Varianza del evento)\n")
+cat("  - Comprobación (CAL-RES+UNC):", round((cal - res + unc)/3, 4), "\n")
+cat("-------------------------------------------------------\n")
+cat("RANKED PROBABILITY SCORE - RPS (BONIFICABLE):\n")
+cat("  - RPS Promedio Modelo:      ", round(rps_promedio, 4), "\n")
+cat("=======================================================\n")
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Revisión del código contra la sección 7.2 de la rúbrica: el Brier se
+compara contra las dos líneas base que pide la rúbrica (uniforme y
+frecuencia histórica) y se reporta el Brier Skill Score; la función del
+RPS usa la fórmula estándar de probabilidades acumuladas con el factor
+1/(r − 1) = 0.5 para tres categorías. Se detectó una inconsistencia en la
+descomposición de Murphy: fiabilidad y resolución se calculan sobre los
+3N eventos apilados, pero la incertidumbre se calcula como el promedio de
+las varianzas por resultado, y la línea de "Comprobación" vuelve a dividir
+entre 3; por eso CAL − RES + UNC no reproduce el Brier de la casa.
+Además, el RPS no se compara contra ninguna línea base.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado parcialmente: Brier, líneas base, BSS y RPS se usan como están.
+La descomposición de Murphy requiere corrección antes de reclamar la
+bonificación: calcular la incertidumbre como ȳ(1 − ȳ) sobre los eventos
+apilados, quitar la división adicional entre 3 en la comprobación y
+verificar que CAL − RES + UNC reproduzca el Brier (salvo el pequeño
+residuo propio del agrupamiento). Se recomienda también comparar el RPS
+contra las mismas líneas base.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 15 — Prueba de bondad de ajuste de Hosmer-Lemeshow, magnitud en puntos porcentuales y sensibilidad al agrupamiento, ítem 7.3</h4>
+<div class="bitacora-meta">Fecha: semana 7 del cronograma (8 – 14 de septiembre de 2026, Avance 2) &nbsp;|&nbsp; Etapa: Fase 3 de la rúbrica — Evaluación de la calibración, ítem 7.3 (herramienta: Gemini; continuación de la conversación de la Entrada 13)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Aplicar la prueba de bondad de ajuste del ítem 7.3 atendiendo las dos
+advertencias explícitas de la rúbrica: reportar la magnitud de la
+desviación en puntos porcentuales por intervalo (la trampa del tamaño de
+muestra, cuya omisión se penaliza con −5 puntos) y verificar que la
+conclusión no dependa del esquema de agrupamiento.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">listo, pasemos al inciso 7.3 que es: Pruebas de bondad de ajuste
+Se admite la prueba de Hosmer-Lemeshow u otra prueba de calibración, con dos advertencias que deben aparecer en el informe:
+La trampa del tamaño de muestra
+Con decenas de miles de partidos, cualquier prueba de bondad de ajuste rechazará la hipótesis de calibración perfecta, incluso ante desviaciones minúsculas y sin importancia práctica. El valor p mide si la desviación es detectable, no si importa.
+Por eso se exige reportar siempre la magnitud de la desviación en unidades interpretables: puntos porcentuales de diferencia entre probabilidad predicha y frecuencia observada, por intervalo. Un informe que concluya “el mercado está mal calibrado (p < 0.001)” sin decir que la desviación media es de 0.4 puntos porcentuales está comunicando mal su propio resultado.
+La segunda advertencia: Hosmer-Lemeshow es sensible al esquema de agrupamiento, el mismo que ya se eligió para la curva. Conviene verificar que la conclusión no dependa de esa elección.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Script en R que, sobre los eventos binarios apilados (H/D/A) con
+probabilidades multiplicativas de las cuotas promedio de cierre: aplica
+<code>hoslem.test()</code> del paquete <code>ResourceSelection</code> con
+g = 10; construye una tabla de desviaciones por intervalo de igual ancho
+(0.1) con la diferencia entre frecuencia observada y probabilidad media
+en puntos porcentuales y su valor absoluto; calcula la desviación media
+absoluta ponderada por número de casos; y repite la prueba con g = 5 y
+g = 15 como análisis de sensibilidad al agrupamiento, imprimiendo
+estadístico, grados de libertad y valor p de cada versión.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+Para el Ítem 7.3: Pruebas de bondad de ajuste, la rúbrica exige aplicar una prueba formal (como Hosmer-Lemeshow) complementada con una evaluación del tamaño de muestra (diferencias en puntos porcentuales por bin) y un análisis de sensibilidad frente al número de intervalos (bins).
+Código en R exclusivo para el Ítem 7.3
+Copia y ejecuta este bloque en tu R Markdown:
+R
+# ==============================================================================
+# ÍTEM 7.3: PRUEBAS DE BONDAD DE AJUSTE Y ANÁLISIS DE SENSIBILIDAD
+# ==============================================================================
+
+library(tidyverse)
+library(ResourceSelection) # Para la prueba de Hosmer-Lemeshow
+
+# ------------------------------------------------------------------------------
+# 1. Preparación de datos binarios
+# ------------------------------------------------------------------------------
+df_item_7_3 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+    p_H = prob_bruta_H / overround,
+    p_D = prob_bruta_D / overround,
+    p_A = prob_bruta_A / overround
+  )
+
+datos_hl <- df_item_7_3 %>%
+  select(Resultado_Final, p_H, p_D, p_A) %>%
+  pivot_longer(cols = c(p_H, p_D, p_A), names_to = "tipo", values_to = "prob") %>%
+  mutate(
+    ocurrio = case_when(
+      tipo == "p_H" & Resultado_Final == "H" ~ 1,
+      tipo == "p_D" & Resultado_Final == "D" ~ 1,
+      tipo == "p_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+# ------------------------------------------------------------------------------
+# 2. Prueba de Hosmer-Lemeshow Formal (g = 10 grupos)
+# ------------------------------------------------------------------------------
+hl_test_10 <- hoslem.test(datos_hl$ocurrio, datos_hl$prob, g = 10)
+
+# ------------------------------------------------------------------------------
+# 3. Magnitud del efecto (Diferencias en puntos porcentuales por bin)
+# ------------------------------------------------------------------------------
+tabla_desviaciones <- datos_hl %>%
+  mutate(bin = cut(prob, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)) %>%
+  group_by(bin) %>%
+  summarise(
+    n_casos = n(),
+    prob_media = mean(prob),
+    frec_observada = mean(ocurrio),
+    desviacion_pp = (frec_observada - prob_media) * 100, # En puntos porcentuales
+    desviacion_abs_pp = abs(desviacion_pp),
+    .groups = "drop"
+  )
+
+desviacion_media_pp <- sum(tabla_desviaciones$n_casos * tabla_desviaciones$desviacion_abs_pp) / sum(tabla_desviaciones$n_casos)
+
+# ------------------------------------------------------------------------------
+# 4. Análisis de Sensibilidad al Agrupamiento (g = 5, g = 10, g = 15)
+# ------------------------------------------------------------------------------
+hl_test_5  <- hoslem.test(datos_hl$ocurrio, datos_hl$prob, g = 5)
+hl_test_15 <- hoslem.test(datos_hl$ocurrio, datos_hl$prob, g = 15)
+
+# ------------------------------------------------------------------------------
+# 5. Impresión de Resultados Consolidados
+# ------------------------------------------------------------------------------
+cat("\n=======================================================\n")
+cat("       RESULTADOS PRUEBA DE BONDAD DE AJUSTE (7.3)      \n")
+cat("=======================================================\n")
+cat("1. PRUEBA DE HOSMER-LEMESHOW PRINCIPAL (g = 10 Bins):\n")
+cat("   - Estadística Chi-cuadrado (X2):", round(hl_test_10$statistic, 4), "\n")
+cat("   - Grados de libertad (df):      ", hl_test_10$parameter, "\n")
+cat("   - valor p (p-value):            ", round(hl_test_10$p.value, 5), "\n\n")
+
+cat("2. MAGNITUD PRÁCTICA DE LA DESVIACIÓN:\n")
+cat("   - Desviación Media Ponderada:   ", round(desviacion_media_pp, 2), "puntos porcentuales (%p)\n\n")
+
+cat("3. ANÁLISIS DE SENSIBILIDAD AL ESQUEMA DE AGRUPAMIENTO:\n")
+cat("   - g = 5  bins -> X2 =", round(hl_test_5$statistic, 2),  "| p-value =", round(hl_test_5$p.value, 5), "\n")
+cat("   - g = 10 bins -> X2 =", round(hl_test_10$statistic, 2), "| p-value =", round(hl_test_10$p.value, 5), "\n")
+cat("   - g = 15 bins -> X2 =", round(hl_test_15$statistic, 2), "| p-value =", round(hl_test_15$p.value, 5), "\n")
+cat("=======================================================\n")
+
+# Mostrar tabla con las desviaciones en puntos porcentuales
+print(tabla_desviaciones)
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Revisión del código contra la sección 7.3 de la rúbrica: cumple las dos
+advertencias exigidas —reporta la desviación en puntos porcentuales por
+intervalo y su media ponderada, y repite la prueba con g = 5, 10 y 15—.
+Se identificaron tres limitaciones: (1) la prueba trata como independientes
+los tres eventos de un mismo partido, que suman 1 por construcción (trampa
+de dependencia de la sección 8); (2) <code>hoslem.test()</code> usa g − 2
+grados de libertad, pensados para un modelo logístico ajustado sobre los
+mismos datos, mientras que para pronósticos externos lo usual es g;
+(3) la prueba agrupa por cuantiles y la tabla en puntos porcentuales por
+intervalos de igual ancho, de modo que el valor p y la magnitud no se
+refieren a los mismos grupos.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado como base, con ajustes necesarios para el informe: aplicar la
+prueba por resultado (H, D y A por separado) o declarar explícitamente la
+dependencia como limitación, justificar los grados de libertad, y reportar
+la tabla en puntos porcentuales con el mismo agrupamiento que la prueba.
+En el informe, todo valor p debe ir acompañado de la desviación en puntos
+porcentuales (penalización de −5 puntos, sección 13.2).
+</div>
+</div>
+
+## Fase: Análisis de Desviaciones Sistemáticas
+
+<div class="bitacora-card">
+<h4>Entrada 16 — Contraste formal del sesgo favorito-longshot, ítem 7.4</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 4 de la rúbrica — Análisis de desviaciones sistemáticas (ítem 7.4 de la sección de evaluación de la calibración) (herramienta: Gemini; continuación de la conversación de la Entrada 13)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Contrastar formalmente el sesgo favorito-longshot (ítem 7.4 de la
+rúbrica), modelando el error de calibración en función de la
+probabilidad implícita y comparando el desempeño entre los extremos del
+rango de probabilidades.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">pasemos al inciso 7.4 que es: Sesgo favorito-longshot
+Fenómeno documentado en la literatura de mercados de apuestas: la tendencia a que los resultados improbables estén sobrevalorados y los favoritos infravalorados. Contrastarlo formalmente —por ejemplo, modelando el error de calibración en función de la probabilidad implícita, o comparando el desempeño entre los extremos del rango— es una de las líneas más productivas del proyecto.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Gemini propuso tres enfoques complementarios y un script en R que, sobre
+los mismos eventos binarios apilados con probabilidades multiplicativas
+de las cuotas promedio de cierre: (1) calcula el error de calibración por
+intervalo de igual ancho (frecuencia observada − probabilidad media) y
+ajusta una regresión lineal ponderada por número de casos del error
+sobre la probabilidad media de cada intervalo; (2) compara probabilidad
+predicha y frecuencia observada, en puntos porcentuales, entre
+"longshots" (&lt; 20 %) y "favoritos claros" (&gt; 50 %), sin incluir
+intervalos de confianza ni prueba formal para esa comparación; y (3)
+grafica el error por intervalo con la recta de regresión. El gráfico
+incluye una leyenda fija que asigna los valores negativos a longshots y
+los positivos a favoritos.
+<details>
+<summary>Ver más</summary>
+<pre class="prompt-full">
+Para finalizar el Ítem 7.4: Sesgo favorito-longshot, realizaremos el contraste formal del fenómeno utilizando tres enfoques metodológicos complementarios:
+	Modelado del Error de Calibración: Regresión lineal para evaluar el impacto de la probabilidad implícita sobre el error (diferencia entre frecuencia real y probabilidad predicha).
+	Comparación entre Extremos (Underdogs vs. Favoritos): Comparación directa del desempeño de las cuotas en los extremos del rango de probabilidades (&lt;20% vs. &gt;50%).
+	Representación Gráfica del Sesgo: Diagrama de dispersión con línea de tendencia para observar la dirección de la infravaloración/sobrevaloración.
+Código en R exclusivo para el Ítem 7.4
+Copia y ejecuta este bloque en tu R Markdown:
+R
+# ==============================================================================
+# ÍTEM 7.4: ANÁLISIS FORMAL DEL SESGO FAVORITO-LONGSHOT
+# ==============================================================================
+
+library(tidyverse)
+library(ggplot2)
+
+# 1. Preparación de datos y cálculo del error por evento/bin
+df_item_7_4 <- base_filtrada %>%
+  filter(!is.na(Promedio_Cierre_Local) & !is.na(Promedio_Cierre_Empate) & !is.na(Promedio_Cierre_Visitante)) %>%
+  mutate(
+    prob_bruta_H = 1 / Promedio_Cierre_Local,
+    prob_bruta_D = 1 / Promedio_Cierre_Empate,
+    prob_bruta_A = 1 / Promedio_Cierre_Visitante,
+    overround = prob_bruta_H + prob_bruta_D + prob_bruta_A,
+    p_H = prob_bruta_H / overround,
+    p_D = prob_bruta_D / overround,
+    p_A = prob_bruta_A / overround
+  )
+
+datos_sesgo <- df_item_7_4 %>%
+  select(Resultado_Final, p_H, p_D, p_A) %>%
+  pivot_longer(cols = c(p_H, p_D, p_A), names_to = "tipo", values_to = "prob") %>%
+  mutate(
+    ocurrio = case_when(
+      tipo == "p_H" & Resultado_Final == "H" ~ 1,
+      tipo == "p_D" & Resultado_Final == "D" ~ 1,
+      tipo == "p_A" & Resultado_Final == "A" ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+# Agrupamiento por bins de 10%
+tabla_sesgo_bins <- datos_sesgo %>%
+  mutate(bin = cut(prob, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)) %>%
+  group_by(bin) %>%
+  summarise(
+    n_casos = n(),
+    prob_media = mean(prob),
+    frec_observada = mean(ocurrio),
+    error_calibracion = frec_observada - prob_media, # Positivo = Subestimado, Negativo = Sobreestimado
+    .groups = "drop"
+  )
+
+# 2. Modelo de Regresión Lineal sobre el Error
+# Error = Beta0 + Beta1 * Probabilidad
+modelo_sesgo <- lm(error_calibracion ~ prob_media, data = tabla_sesgo_bins, weights = n_casos)
+resumen_modelo <- summary(modelo_sesgo)
+
+# 3. Comparación de Extremos (Longshots &lt; 20% vs. Favoritos &gt; 50%)
+extremos_comparacion <- datos_sesgo %>%
+  mutate(
+    categoria = case_when(
+      prob &lt; 0.20 ~ "Longshots / Underdogs (&lt;20%)",
+      prob &gt; 0.50 ~ "Favoritos Claros (&gt;50%)",
+      TRUE ~ "Rango Medio (20%-50%)"
+    )
+  ) %>%
+  filter(categoria != "Rango Medio (20%-50%)") %>%
+  group_by(categoria) %>%
+  summarise(
+    n_eventos = n(),
+    prob_media_predicha = mean(prob),
+    frecuencia_real = mean(ocurrio),
+    diferencia_pp = (frecuencia_real - prob_media_predicha) * 100,
+    .groups = "drop"
+  )
+
+# 4. Impresión de Resultados
+cat("\n=======================================================\n")
+cat("      CONTRASTE FORMAL DEL SESGO FAVORITO-LONGSHOT (7.4)\n")
+cat("=======================================================\n")
+cat("1. REGRESIÓN LINEAL DEL ERROR DE CALIBRACIÓN:\n")
+cat("   - Pendiente (Beta1):            ", round(resumen_modelo$coefficients[2, 1], 4), "\n")
+cat("   - Error Estándar Beta1:         ", round(resumen_modelo$coefficients[2, 2], 4), "\n")
+cat("   - valor p del sesgo:            ", round(resumen_modelo$coefficients[2, 4], 5), "\n")
+cat("   - R2 Ajustado:                  ", round(resumen_modelo$r.squared, 4), "\n\n")
+
+cat("2. COMPARACIÓN DIRECTA DE EXTREMOS:\n")
+print(extremos_comparacion)
+cat("=======================================================\n")
+
+# 5. Gráfico del Error de Calibración
+ggplot(tabla_sesgo_bins, aes(x = prob_media, y = error_calibracion)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", linewidth = 0.8) +
+  geom_point(aes(size = n_casos), color = "#1f77b4") +
+  geom_smooth(method = "lm", se = TRUE, color = "#ff7f0e", fill = "grey80") +
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Magnitud del Sesgo Favorito-Longshot",
+    subtitle = "Diferencia (Frecuencia Real - Probabilidad Predicha) por Rango de Probabilidad",
+    x = "Probabilidad Predicha (Ajustada)",
+    y = "Error de Calibración (Puntos Porcentuales)",
+    size = "Cantidad de Casos",
+    caption = "Valores negativos = Sobreestimación (Longshots) | Valores positivos = Subestimación (Favoritos)"
+  ) +
+  theme_minimal()
+</pre>
+</details>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Revisión del código contra la sección 7.4 de la rúbrica: hace los dos
+contrastes que sugiere la rúbrica (error de calibración en función de la
+probabilidad implícita y comparación entre extremos) y reporta las
+diferencias en puntos porcentuales. Se identificaron cuatro problemas:
+(1) la regresión se ajusta sobre unos 10 puntos (uno por intervalo), con
+muy pocos grados de libertad; (2) la comparación de extremos no tiene
+intervalo de confianza ni prueba; (3) la leyenda del gráfico afirma de
+antemano que los valores negativos corresponden a longshots, sin importar
+lo que muestren los datos; (4) la línea "R2 Ajustado" imprime el R² sin
+ajustar (<code>r.squared</code> en lugar de
+<code>adj.r.squared</code>).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado como base del análisis del sesgo favorito-longshot, con
+correcciones antes del informe final: reemplazar la leyenda por una
+descripción neutra (negativo = sobreestimación, positivo =
+subestimación), corregir la etiqueta del R², agregar intervalos de Wilson
+a la comparación de extremos y, preferiblemente, modelar el error a nivel
+de evento (p. ej. regresión logística del resultado sobre la probabilidad
+implícita) en lugar de sobre 10 puntos agregados. La conclusión sobre la
+existencia del sesgo debe redactarse a partir de la salida real y sin
+lenguaje de oportunidad (criterio E).
+</div>
+</div>
+
+## Fase: Automatización del Reporte de Calibración
+
+<div class="bitacora-card">
+<h4>Entrada 17 — Puesta en contexto y diagnóstico del flujo de scripts para el reporte autogenerado</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 5 de la rúbrica — Automatización del reporte (entregable 3) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Dar a la IA el contexto del proyecto (rúbrica, scripts y base analítica)
+y obtener un diagnóstico del flujo existente antes de modificar el .Rmd
+del entregable 3 (reporte de calibración autogenerado). El alcance de la
+base analítica es LaLiga, temporadas 2017/18 y 2018/19 (760 partidos), con
+6 casas de apuestas.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Solicitud inicial</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Estoy realizando un proyecto de estadística industrial... primero quiero que leas la rúbrica y entres en contexto, luego te enviaré los códigos y la base de datos; quiero que me ayudes a modificar mi Rmd del entregable Reporte de calibración autogenerado.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+La IA revisó la carpeta de trabajo, no encontró la rúbrica adjunta y
+pidió los archivos necesarios: rúbrica, scripts, base de datos, .Rmd y el
+mensaje de error completo.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Envío de la rúbrica</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Envío de la rúbrica del proyecto, el mismo documento de la Entrada 2.)</div>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Resumen de lo que exige el entregable 3 (curvas con intervalos de
+confianza, tabla de desviaciones por intervalo, Brier contra líneas base,
+comparación de al menos dos métodos de remoción del margen y regeneración
+automática) y de los criterios y penalizaciones relacionados (valor p sin
+magnitud, probabilidades brutas, advertencia de Pinnacle, encuadre
+retrospectivo y bonificaciones).
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 3</span> Envío de scripts y base</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Envío de 5 scripts de R del equipo y de la base <code>Base_Analitica_Entregable_1.csv</code>.)</div>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+La IA describió el flujo y señaló problemas: el "motor 6.0" calculaba el
+Brier sobre cuotas y no sobre probabilidades; solo se analizaba el método
+de potencia; las curvas no tenían intervalos de confianza; no había
+líneas base; la partición por filas era frágil; había fechas en dos
+formatos; se usaban rutas absolutas, y algunos títulos tenían lenguaje
+exagerado ("Colapso…").
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+<strong>Intercambio 2:</strong> el equipo contrastó el resumen del entregable 3 con las secciones 10 y 13 de la rúbrica.
+<br><strong>Intercambio 3:</strong> la IA inspeccionó la base con código (760 filas × 111 columnas, formatos de fecha y faltantes), confirmando con datos los problemas de formato de fecha que había señalado. El intercambio 1 no requería verificación: solo pedía los archivos.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado. El diagnóstico fijó la lista de correcciones del reporte:
+calcular el Brier sobre probabilidades y no sobre cuotas (el motor 6.0
+quedó fuera del flujo final, Entrada 27), comparar más de un método de
+remoción del margen, agregar intervalos de confianza y líneas base, y
+retirar títulos con lenguaje exagerado, en línea con el criterio E. El
+intercambio 1 no avanzó porque la rúbrica aún no estaba adjunta.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 18 — Error de ruta de la base analítica al compilar el reporte</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 5 de la rúbrica — Automatización del reporte (entregable 3) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Resolver el error que impedía compilar el .Rmd del reporte de
+calibración.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Envío del .Rmd junto con el mensaje de error.)</div>
+<pre class="prompt-full">el error es: No se encontró la base analítica. Copia 'Base_Analitica_Entregable_1.csv' junto a este .Rmd o ajusta params$ruta_csv.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Diagnóstico: el código no tenía errores; el CSV no estaba en la carpeta
+del .Rmd. La IA amplió la búsqueda de la base (carpeta del .Rmd,
+<code>Resultados/</code>, <code>datos/</code>, carpetas superiores y
+búsqueda recursiva), mejoró el mensaje de error y corrigió dos detalles de
+texto.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+La IA instaló R, compiló el .Rmd con la base y probó tres casos: CSV
+junto al .Rmd, CSV en <code>Resultados/</code> y ruta indicada por
+parámetro.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: el error era de ubicación del archivo, no de código. El .Rmd
+quedó con búsqueda ampliada del CSV y un mensaje de error más claro, lo
+que favorece la reproducibilidad en sesión limpia (criterio D).
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 19 — Comprobación de que las cifras de las conclusiones se calculan automáticamente</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 5 de la rúbrica — Automatización del reporte (entregable 3) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Confirmar que los valores citados en las conclusiones del reporte
+provienen de los cálculos del código y no fueron escritos a mano, como
+exige el carácter autogenerado del entregable 3.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">¿Los valores de las conclusiones son de los cálculos que realizó el código?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Sí: 39 expresiones en línea insertan valores calculados, y el bootstrap
+y la simulación usan semilla fija. La IA señaló dos frases escritas a mano
+que no se verificaban solas.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Revisión del HTML generado y de las tablas que respaldan esas
+frases.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: las cifras del texto se actualizan al re-ejecutar el flujo y
+son reproducibles por la semilla fija. Las dos frases escritas a mano
+quedaron señaladas; en la auditoría de la Entrada 24 se corrigieron dos
+textos de ese tipo.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 20 — Revisión y mejora del script de control de la base</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 1 de la rúbrica (validación de la base) aplicada al flujo final — script de control (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Revisar los datos faltantes que reportó el script de control para la
+temporada 2017/18 y mejorar el script, una mejora a la vez y sin alterar
+su estructura original.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Revisión de los faltantes de 2017/18</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Envío de la salida del script de control para 2017/18 con datos faltantes.)</div>
+<pre class="prompt-full">revisa esa parte y me comentas (no modifiques el script aún).</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Identificó el partido sin cuota de cierre de Pinnacle (Alavés vs. Real
+Sociedad, 14/10/2017) y que Ladbrokes, que también presenta faltantes, no
+se usa en el análisis. Explicó cómo lo maneja el reporte (759 partidos en
+la comparación entre apertura y cierre) y propuso mejoras sin modificar
+el script.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Acuerdo de método de trabajo</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Te pasaré el código de control... incorpora las mejoras sin modificar la estructura original... confirma que has entendido... vamos mejora por mejora... no me envíes el RMD hasta que te lo indique.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+La IA confirmó la metodología de trabajo, abrió un registro de mejoras y
+preguntó si las validaciones debían integrarse al .Rmd.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 3</span> Propuesta de mejoras</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Envío del script de control.)</div>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Propuesta de 8 mejoras priorizadas según la rúbrica: trazabilidad de
+faltantes, consistencia del resultado, fechas, cuotas con texto, margen
+imposible, duplicados, exportación y nombres de columnas.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 4</span> Implementación de la primera mejora</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Respuesta afirmativa para empezar por la primera mejora.)</div>
+<pre class="prompt-full">si</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Se implementó la trazabilidad de faltantes (MEJORA 2 en el registro de
+mejoras): registro por partido, operador y columnas, indicando si el
+operador se usa en el análisis. No se cambió la estructura original.
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+<strong>Intercambio 1:</strong> cruce de la salida del control con la base analítica.
+<br><strong>Intercambio 2:</strong> la IA respetó lo acordado; trabajó mejora por mejora y no envió el .Rmd hasta que se le pidió (Entrada 22).
+<br><strong>Intercambio 3:</strong> las 8 mejoras se contrastaron con la Fase 1 y la lista de verificación de la rúbrica (sección 16): consistencia del resultado, formato de fechas, cuotas no numéricas o imposibles y duplicados corresponden a validaciones que la rúbrica exige.
+<br><strong>Intercambio 4:</strong> la IA probó la mejora con archivos de prueba en tres casos (faltan las tres cuotas, falta una y no falta ninguna).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: el script de control conserva su estructura original y ahora
+registra, por partido y operador, qué cuotas faltan y si ese operador
+entra en el análisis. El resto de la lista de 8 mejoras quedó propuesto;
+el registro de la sesión no documenta su implementación.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 21 — Margen atípico en Vallecano vs. Betis y documentación de anomalías en el reporte</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 2 de la rúbrica (caracterización del margen) integrada al reporte autogenerado (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Entender qué significa el margen en puntos porcentuales y un margen
+atípico detectado por el control, documentar en el reporte las anomalías
+de la base, y presentar las validaciones numéricas de forma legible.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Margen atípico</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">¿Qué es el margen p.p. y qué ocurre con este partido: Vallecano vs Betis, 31/03/2019, WilliamHill, 18?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Explicó que p.p. son puntos porcentuales y cómo se calcula el margen. En
+ese partido, la cuota de empate de William Hill fue 2.50, cuando las demás
+casas estaban entre 3.40 y 3.60; es un probable error de captura, y el
+partido terminó en empate. Planteó opciones de tratamiento.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Mención de las anomalías en el reporte</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Confírmame cómo trata el reporte las 2 anomalías y, si no lo menciona explícitamente, que ahora haga mención.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Se agregaron al .Rmd las subsecciones "Datos faltantes" y "Márgenes
+atípicos", con tablas y textos generados automáticamente (cuota que se
+aparta del consenso y resultado del partido), además de una mención en
+Limitaciones.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 3</span> Formato de las validaciones</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">¿Qué significa esto? No me gusta que los números salgan así: 3.4e-05… Máx. diferencia entre la base y el recálculo.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Explicó las dos validaciones (las probabilidades suman 100 % y el
+recálculo coincide con la base) y cambió la notación científica por
+puntos porcentuales (0.0034 p.p. y 0.0012 p.p.), con redacción clara.
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+<strong>Intercambio 1:</strong> comparación de las cuotas de todos los operadores en ese partido.
+<br><strong>Intercambio 2:</strong> render del reporte y lectura de los textos generados.
+<br><strong>Intercambio 3:</strong> revisión automática del HTML; no quedó ningún número en notación científica.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado. La cuota de empate de William Hill en ese partido quedó
+documentada como probable error de captura, y las anomalías (faltantes y
+márgenes atípicos) aparecen en el reporte y en Limitaciones con textos que
+se regeneran solos, como pide el inventario de exclusiones del entregable
+4. Las validaciones se presentan en puntos porcentuales, coherente con la
+exigencia de unidades interpretables.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 22 — Método de potencia como referencia y objetivo secundario: calibración antes y después del VAR</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 4 de la rúbrica — Análisis de desviaciones sistemáticas (cambio de calibración entre temporadas) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Unificar el análisis en el método de potencia y agregar una pregunta
+secundaria: si la calibración de las casas cambió con la introducción del
+VAR (2017/18 frente a 2018/19).
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Potencia y VAR</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Haces los análisis con el método multiplicativo y necesito que lo hagas con el de potencia; además añade gráficos para comparar la calibración 2017/18 y 2018/19, y responde como objetivo secundario: ¿las casas de apuestas estaban preparadas para la inclusión del VAR?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Aclaró que el análisis principal ya usaba potencia y pasó a potencia las
+tres partes que aún tomaban el multiplicativo como referencia. Creó la
+sección del VAR: 4 gráficos, diferencia en diferencias, prueba de cambio
+de calibración, Murphy por periodo, análisis por operador y por mitades
+de temporada, y un veredicto automático. El veredicto inicial era
+demasiado tajante y se corrigió en la misma sesión a "indicio localizado
+en el empate".
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Envío del avance</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Envíame el Rmd ahora sí para ver cómo vamos.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Se envió el .Rmd de avance y el HTML generado.
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+<strong>Intercambio 1:</strong> revisión visual de los gráficos y contraste del veredicto con los valores p y los intervalos, que motivó suavizar su redacción. La pregunta del VAR se contrastó con la rúbrica: equivale a la pregunta viable "¿ha cambiado la calibración del mercado a lo largo de las temporadas?" (sección 2).
+<br><strong>Intercambio 2:</strong> el reporte compiló sin errores.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado con corrección: el análisis completo usa el método de potencia
+como principal, y el reporte incluye la pregunta secundaria del VAR. La
+conclusión quedó como "indicio localizado en el empate" en lugar de un
+veredicto categórico, coherente con distinguir significancia estadística
+de relevancia práctica.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 23 — Claridad expositiva del reporte: gráfico del VAR, recuadros explicativos y redacción</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 5 de la rúbrica — Automatización del reporte; comunicación de resultados (criterio D) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Mejorar la legibilidad del reporte: reemplazar un gráfico poco claro,
+explicar cada método antes de presentarlo y escribir conclusiones en
+lenguaje sencillo.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Gráfico, recuadros y conclusiones</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">La gráfica del cambio del error de pronóstico con la entrada del VAR no me gusta; antes de presentar un método (Brier, Holm…) da una pequeña explicación de qué trata y qué busca responder; y las conclusiones más sencillas, aterrizadas a un contexto real.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Nuevo gráfico del error de calibración por operador antes y después del
+VAR, con una franja del error esperado por azar. Se agregaron 18
+recuadros explicativos y una sección de "Conclusiones principales" en
+lenguaje sencillo; la Discusión también se reescribió.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Envío del .Rmd</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Envíame el Rmd de ese html.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Se envió el .Rmd correspondiente.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 3</span> Aclaración de un párrafo del reporte</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">¿Eh? (párrafo: 'en los 95 partidos en que las cuotas le daban al local alrededor de un 48 %, el local ganó el 49 %… 3.6 puntos… 3.5 puntos').</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Explicó el párrafo con la tabla de los 8 grupos de 95 partidos y el
+significado de 3.6 frente a 3.5 puntos (con el ejemplo de la moneda), y
+propuso una redacción más clara.
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+<strong>Intercambio 1:</strong> revisión visual del gráfico (se corrigió una etiqueta que tapaba el título) y render completo.
+<br><strong>Intercambio 2:</strong> el .Rmd entregado es el que se audita en la Entrada 24.
+<br><strong>Intercambio 3:</strong> conteos exactos calculados sobre la base (47 de 95 partidos); los 8 grupos de 95 partidos corresponden a un agrupamiento de igual frecuencia (760 / 8).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: el reporte quedó con el nuevo gráfico, 18 recuadros
+explicativos y conclusiones en lenguaje sencillo. La redacción alternativa
+del párrafo de los 95 partidos quedó propuesta, pendiente de aprobación
+del equipo.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 24 — Auditoría de procedencia de todas las cifras del reporte</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 5 de la rúbrica — Reproducibilidad del reporte (criterio D) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Confirmar que todos los datos del reporte salen de la base y los
+códigos del equipo, antes de seguir modificándolo.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Antes de seguir necesito confirmar al 100 % que todos los datos de ahí salen de mi base de datos y mis códigos.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Auditoría completa: el .Rmd lee un único archivo; la base se reproduce
+exactamente con la función del propio equipo (diferencia máxima de
+5.6e-16); los 14 Brier por casa y temporada coinciden con los del script
+del equipo; un recálculo independiente en Python coincide en 38 de 39
+cifras, y la diferencia se explicó por el manejo de empates de rango en
+scipy; los 1 475 números son idénticos en dos ejecuciones. Se corrigieron
+dos textos (un ejemplo que parecía dato real y una afirmación no
+verificada) y se identificaron los análisis que provienen de código nuevo
+del .Rmd y no de los scripts del equipo.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Ejecución de los scripts originales, recálculo independiente en Python y
+doble renderizado del reporte.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: las cifras del reporte salen de la base y los scripts del
+equipo, con dos textos corregidos. La auditoría también separó qué
+análisis provienen de código nuevo escrito en el .Rmd con ayuda de la IA,
+distinción que debe declararse en la sección "Uso de IA" del informe.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 25 — Sensibilidad entre métodos con la prueba de Friedman y lenguaje accesible</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 2 y Fase 4 de la rúbrica — Análisis de sensibilidad entre métodos de remoción del margen (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Incorporar al reporte el hallazgo de la prueba de Friedman sobre las
+diferencias entre casas según el método de remoción del margen, y
+simplificar las explicaciones conectándolas con el proyecto y con el
+funcionamiento de las casas de apuestas.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Realiza lo del hallazgo de Friedman en la sección de sensibilidad, pero además quiero que las explicaciones y definiciones sean lo más simples posibles, aterrizadas al proyecto, y las implicaciones aterrizadas al mundo de las casas de apuesta.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Nueva subsección "¿Hay casas mejores que otras? Depende del método": con
+el método multiplicativo, el orden de las casas sigue su margen
+(correlación 1.00). Se reescribieron los 18 recuadros ("En palabras
+simples / Para qué lo usamos"), se agregó la sección "¿Qué significa esto
+para el mundo de las apuestas?" y una nota de juego responsable.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Python verificó 41 de 41 cifras, y se revisó que el texto no incluyera
+recomendaciones de apuesta. Contraste con la rúbrica: Friedman es una
+prueba no paramétrica de medidas repetidas, la alternativa que la sección
+8 indica para comparar casas evaluadas sobre los mismos partidos.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: el reporte muestra que la diferencia entre casas depende del
+método. Con el multiplicativo es significativa (p = 0.0002) y las casas
+se ordenan según su margen; con potencia deja de serlo (p = 0.079). Es el
+caso que describe la sección 6.2: un hallazgo del método, no del mercado.
+La sección de implicaciones incluye una nota de juego responsable y no
+contiene recomendaciones (criterio E).
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 26 — Origen de la variable Promedio_Apertura: Script 0 de unificación y redefinición del promedio</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 1 de la rúbrica — Trazabilidad de la base analítica (entregables 1 y 2) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Responder siete preguntas de preparación sobre el flujo (cálculo del
+promedio de apertura, pruebas realizadas, comparación entre potencia y
+multiplicativo, resultados, partidos por casa, origen de columnas y
+estadísticos del margen), y en el proceso establecer de qué columnas
+crudas de Football-Data sale la variable <code>Promedio_Apertura</code>.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Siete preguntas sobre el flujo</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">¿Cómo calculamos la variable promedio de apertura? ¿Qué pruebas estadísticas se realizaron? ¿Se comparó potencia con multiplicativo? ¿Qué resultados arrojó el código? ¿Cuántos partidos quedaron disponibles por casa? ¿De dónde salen las columnas de promedio de apertura y Pinnacle cierre? ¿Tenemos media, mediana y desviación de cada casa?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Respondió con tablas: 760 partidos por casa y 759 para el cierre;
+media, mediana y desviación del margen; lista de pruebas y comparación de
+métodos. Detectó un matiz en las pendientes con potencia. El origen de
+<code>Promedio_Apertura</code> quedó como inferencia (probablemente
+<code>BbAv</code> de Football-Data) porque faltaba el script de
+unificación.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Solicitud de los scripts faltantes</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Te paso todos los scripts que te faltan y miras si puedes responder todo.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+La IA indicó qué necesitaba: el script que crea
+<code>Base_Unificada_Limpia_VAR.csv</code> y los CSV crudos de
+Football-Data.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 3</span> Envío de 4 scripts</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Envío de 4 scripts.)</div>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+La IA comprobó que los 4 eran idénticos línea por línea a scripts ya
+enviados; seguía faltando el paso de unificación.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 4</span> Script del margen</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Cuando ejecuto este código se me crea la base analítica Entregable 1.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Explicó que ese script parte de <code>Base_Unificada_Limpia_VAR.csv</code>
+y que el paso que la crea no está en ninguno de los scripts; incluyó un
+diagrama del flujo.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 5</span> Uso de la variable en el .Rmd</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Hagamos más fácil: de tu Rmd, ¿de dónde sale el promedio apertura?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+El .Rmd no lo calcula: lo lee de la base como un operador más y le
+aplica los tres métodos de remoción del margen; se indicaron las líneas
+exactas del código.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 6</span> Creación del Script 0</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Modifica mi código de forma que se vea claramente cómo calcula lo que necesitas, porque yo al ejecutar la seguidilla de 5 scripts me da los resultados; no sé por qué no sabes de dónde sale.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Mostró, script por script, que ninguno crea la base unificada. Creó el
+"Script 0" de unificación: un diccionario explícito de columnas de
+Football-Data y una verificación automática celda por celda que, si algo
+no coincide, indica qué columna cruda sí coincide.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 7</span> Respuesta a las preguntas con el Script 0</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">¿Ahora sí puedes responder las preguntas?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Respondió las 7 preguntas, con la salvedad de que la confirmación final
+de <code>Promedio_Apertura</code> dependía de correr el Script 0 con los
+CSV reales.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 8</span> Redefinición del promedio de apertura</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Necesito que promedio apertura sea solo de las casas de apuestas que estoy comparando.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+El Script 0 pasó a calcular <code>Promedio_Apertura</code> como el
+promedio de las cuotas de las 6 casas. Se regeneraron la base y el
+reporte, se actualizaron los textos y se entregó una tabla antes/después:
+el margen del mercado promedio pasó de 4.89 a 4.56 p.p. y las
+conclusiones no cambiaron. El detector confirmó que el promedio anterior
+venía de <code>BbAvH/D/A</code>.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 9</span> Coherencia entre código y reporte</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">¿Ahora el promedio apertura que calcula el código es el mismo que aparece en el reporte de calibración?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Sí. Se verificó la cadena completa Script 0 → script de margen →
+reporte (margen 4.56 p.p., Brier 0.5861, entre otros). La IA recordó que
+hay que regenerar la base en el PC del equipo.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 10</span> Respuestas definitivas</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Ahora sí responde las preguntas: (las 7 preguntas anteriores).</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Respuestas definitivas con las cifras actualizadas (promedio de las 6
+casas): cálculo y origen de las columnas, partidos por casa, tabla de
+márgenes, pruebas estadísticas, comparación de métodos y resultados
+principales.
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+<strong>Intercambio 1:</strong> cálculos directos sobre la base.
+<br><strong>Intercambio 3:</strong> comparación automática (diff) de los archivos.
+<br><strong>Intercambio 4:</strong> lectura de las líneas de lectura y escritura del script.
+<br><strong>Intercambio 5:</strong> búsqueda de las líneas en el .Rmd.
+<br><strong>Intercambio 6:</strong> prueba con archivos en formato Football-Data (31 de 31 columnas); el detector encontró un mapeo erróneo introducido a propósito, y el flujo completo reprodujo la base idéntica (760 × 111).
+<br><strong>Intercambio 8:</strong> Python verificó 41 de 41 cifras sobre la base nueva y comprobó el promedio exacto de las 6 casas en los 760 partidos.
+<br><strong>Intercambios 9 y 10:</strong> comparación de los valores de la base con las tablas del reporte regenerado.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado. El flujo quedó completo y trazable gracias al Script 0, que
+unifica los CSV de Football-Data con un diccionario explícito de columnas
+y una verificación celda por celda. Se confirmó que el promedio de
+apertura original venía de <code>BbAvH/D/A</code> (promedio de BetBrain);
+por decisión del equipo se redefinió como el promedio de las 6 casas
+comparadas, con lo que el margen del mercado promedio pasó de 4.89 a 4.56
+p.p. sin cambiar las conclusiones. Pendiente señalado por la IA:
+regenerar la base en el PC del equipo con los CSV reales.
+</div>
+</div>
+
+## Fase: Organización del Repositorio y Reproducibilidad
+
+<div class="bitacora-card">
+<h4>Entrada 27 — Organización del repositorio y reproducibilidad en otros equipos</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 5 de la rúbrica — Repositorio de código (entregable 2) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Dejar los códigos listos para adjuntar, con una estructura profesional
+de carpetas y scripts, y resolver los errores de ejecución que
+aparecieron al correrlos en otros computadores.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 1</span> Estándar para los scripts</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Ayúdame a organizar mis códigos de forma que estén listos para adjuntar... darle profesionalidad a la estructura de la secuencia.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Propuso un estándar: numeración 00–05, encabezado común, rutas
+relativas, carpeta de configuración y script maestro. Recomendó dejar
+fuera el motor 6.0 porque calcula sobre cuotas.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 2</span> Estructura de carpetas</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Captura de la carpeta del proyecto.)</div>
+<pre class="prompt-full">Primero organicemos las carpetas: según tu recomendación, ¿qué debe ir en cada carpeta?</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Estructura de carpetas con el contenido de cada una, e indicaciones para
+borrar <code>.RData</code> y <code>.Rhistory</code> (sesión limpia),
+crear el proyecto de RStudio y crear las carpetas <code>reporte/</code> y
+<code>documentos/</code>.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 3</span> Entrega de los scripts renombrados</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Como le cambiaste los nombres a los códigos no sé cuál es cuál; pásame los códigos tú, ya modificados y listos.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Entregó <code>00_configuracion.R</code>, los scripts 01 a 05,
+<code>ejecutar_todo.R</code> y el .Rmd, con una tabla de equivalencias
+entre los nombres nuevos y los scripts originales. Los cálculos no
+cambiaron; se eliminaron las rutas personales.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 4</span> Error al abrir un script</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Mensaje de error.)</div>
+<pre class="prompt-full">no fue posible abrir el archivo '.../scripts/01_control_auditoria.R'.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Diagnóstico de posibles causas (nombre alterado al descargar o archivo
+ubicado en otra carpeta). <code>ejecutar_todo.R</code> ahora revisa los
+archivos antes de empezar y dice cuál falta.
+</div>
+
+
+<div class="intercambio-titulo"><span class="intercambio-num">Intercambio 5</span> Error en el PC de un compañero</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<div class="prompt-nota">(Captura del error.)</div>
+<pre class="prompt-full">Un compañero intenta correr los códigos desde su PC pero le sale esto: cannot open file '00_configuracion.R'.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Diagnóstico a partir de la captura: el script se abrió desde dentro del
+.zip (carpeta Temp). La IA dio los pasos para extraer el .zip y abrir el
+proyecto. Los scripts ahora localizan solos la carpeta del proyecto,
+avisan si se abren desde un .zip, y se agregó el archivo
+<code>.Rproj</code>.
+</div>
+
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+<strong>Intercambio 1:</strong> contraste con el entregable 2 de la rúbrica; la propuesta cubre el script maestro y los parámetros externalizados (carpeta de configuración y rutas relativas), pero no menciona el <code>README.md</code> que el entregable exige.
+<br><strong>Intercambio 2:</strong> la estructura se usó en la ejecución completa del intercambio 3.
+<br><strong>Intercambio 3:</strong> flujo completo ejecutado en una copia del proyecto (23 s, sin errores): base idéntica a la verificada, 7 tablas, 25 gráficos, reporte HTML y "31 de 31" en la segunda corrida.
+<br><strong>Intercambio 4:</strong> prueba renombrando un archivo a propósito; el mensaje lo detectó.
+<br><strong>Intercambio 5:</strong> prueba en 4 escenarios (desde la carpeta del proyecto, desde otra carpeta, con un script suelto y desde una carpeta temporal tipo .zip).
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado: el proyecto quedó con los scripts 00–05,
+<code>ejecutar_todo.R</code>, el .Rmd del reporte y el archivo
+<code>.Rproj</code>, y el flujo completo regenera base, tablas, gráficos y
+reporte con un solo comando (fase 5). El motor 6.0 quedó fuera por
+calcular sobre cuotas, lo que evita comparar probabilidades brutas.
+Pendientes: confirmar la causa exacta del error de apertura en el PC del
+usuario, que el compañero pruebe el flujo en su equipo, y agregar el
+<code>README.md</code> que exige el entregable 2.
+</div>
+</div>
+
+## Fase: Informe y Sustentación
+
+<div class="bitacora-card">
+<h4>Entrada 28 — Preparación de respuestas para la sustentación sobre la prueba de Friedman</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 6 de la rúbrica — Preparación de la sustentación (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Preparar respuestas para la sustentación sobre el resultado de la prueba
+de Friedman y su sensibilidad al método de remoción del margen.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Según mi proyecto responde estas preguntas: (párrafo sobre Friedman: potencia p = 0.079 vs. multiplicativo p = 0.0002).</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+Preguntas y respuestas para la sustentación: qué es la prueba de
+Friedman y por qué se usa, por qué el resultado cambia según el método,
+tamaño de la diferencia, si el hallazgo se mantiene, por qué potencia es
+el método principal y cómo se manejan las comparaciones múltiples.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Las cifras se tomaron del reporte y se recalcularon sobre la base. Se
+contrastaron con las preguntas que la sección 12 de la rúbrica anuncia
+para la sustentación ("si hubieran usado el otro método de normalización,
+¿el hallazgo se mantiene?"; "¿por qué esa prueba y no otra, dado que los
+partidos son los mismos para todas las casas?"; "¿de qué tamaño es la
+desviación?"), y las respuestas cubren las tres.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado como material de estudio para la sustentación. Como la rúbrica
+exige que todos los integrantes puedan defender cualquier decisión
+metodológica (criterio B), las respuestas deben repasarse en equipo y no
+leerse textualmente.
+</div>
+</div>
+
+<div class="bitacora-card">
+<h4>Entrada 29 — Generación del registro de interacciones de la sesión</h4>
+<div class="bitacora-meta">Fecha: semanas 7–8 del cronograma (14 – 21 de septiembre de 2026, previo a la entrega final) &nbsp;|&nbsp; Etapa: Fase 6 de la rúbrica — Documentación del uso de IA (entregable 6) (herramienta: asistente de IA con ejecución de código)</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Objetivo</span>
+Obtener un registro ordenado de los prompts de la sesión, con su
+respuesta y si se cumplió el objetivo, como insumo para esta
+bitácora.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Prompt</span>
+<pre class="prompt-full">Dame en orden y de manera correcta los prompts que te he dado con su respectiva respuesta y además si cumplió o no cumplió con el objetivo.</pre>
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Respuesta obtenida</span>
+El registro de interacciones a partir del cual se documentan las
+Entradas 17 a 28.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Verificación aplicada</span>
+Al incorporarlo a esta bitácora se revisó su coherencia interna: las
+cifras que se repiten entre interacciones coinciden (760 partidos, 759
+para el cierre, 41 de 41 cifras verificadas, margen de 4.89 a 4.56 p.p.).
+También se contrastó con las entradas anteriores, lo que reveló que el
+alcance final (LaLiga 2017/18 y 2018/19) difería de la selección de la
+Entrada 6.
+</div>
+
+<div class="bitacora-field">
+<span class="bitacora-field-label">Resultado</span>
+Aceptado e incorporado como Entradas 17 a 29. A partir de él se
+corrigieron los resultados de las Entradas 5, 6, 10 y 12, que suponían un
+alcance distinto al final.
+</div>
+</div>
+
+---
+
+# Declaración de Integridad
+
+<div class="integridad-box">
+Declaramos que el uso de inteligencia artificial (Gemini) durante el
+desarrollo de este proyecto ha sido documentado en su totalidad en la
+presente bitácora, de acuerdo con lo exigido en la rúbrica del Proyecto 2
+de Estadística Industrial (entregable 6). Cada interacción relevante
+registra el objetivo perseguido, el prompt exacto utilizado, la respuesta
+obtenida, el mecanismo de verificación aplicado sobre dicha respuesta y el
+resultado final (aceptación, corrección o descarte).
+
+Asumimos la responsabilidad total sobre el código, los análisis y las
+interpretaciones estadísticas entregadas en este proyecto, incluyendo
+aquellas partes generadas con apoyo de IA. Entendemos que cualquier error
+de código o interpretación incorrecta derivada de una sugerencia de la IA
+se evalúa bajo el mismo criterio que si fuera de autoría enteramente
+propia. Declaramos además que ningún entregable de este proyecto —incluida
+esta bitácora— constituye, insinúa o puede usarse como recomendación de
+apuesta.
+
+**Firman:** Camilo Henriquez, Mateo Valencia, Samuel Lopez y Valeria Gutierrez &nbsp;&nbsp; **Fecha:** `r format(Sys.Date(), '%d de %B de %Y')`
+</div>
